@@ -1,0 +1,45 @@
+低空物流无人机风险预测平台 手动部署说明
+
+一、这个部署包包含什么
+1. Dockerfile
+2. Procfile
+3. render.yaml
+4. requirements_public.txt
+5. public_web_server.py
+6. model_api_server.py
+7. outputs/web/ai_risk_agent_route_planning_3d_webpage.html
+8. outputs/models/xgboost_non_risk_operation_risk.joblib
+9. outputs/models/xgboost_metrics.csv
+10. outputs/models/xgboost_non_risk_feature_importance.csv
+
+二、手动上传到 GitHub
+1. 打开你的仓库：https://github.com/zhusunxingyu/LLSRI
+2. 进入仓库根目录。
+3. 点击 Add file -> Upload files。
+4. 把本文件夹里的所有内容上传到仓库根目录。
+5. 注意 outputs 文件夹也要一起上传，并保持以下路径不变：
+   outputs/web/ai_risk_agent_route_planning_3d_webpage.html
+   outputs/models/xgboost_non_risk_operation_risk.joblib
+6. 提交信息可以写：
+   Add no-fly zone detection to drone risk platform
+
+三、Render 重新部署
+1. 打开 Render 后台。
+2. 找到服务 shanghai-drone-risk-prediction。
+3. 如果开启 Auto Deploy，GitHub 上传完成后会自动重新部署。
+4. 如果没有自动部署，点击 Manual Deploy -> Deploy latest commit。
+5. 部署完成后访问：
+   https://shanghai-drone-risk-prediction.onrender.com/
+
+四、更新后的网页功能
+1. 地图展示禁飞/管控区域。
+2. 支持启用禁飞区检测、仅显示禁飞区、关闭禁飞区图层。
+3. 航线接近或进入禁飞区时，合规风险上升。
+4. 智能推荐航线会优先给出绕飞避险建议。
+5. 多任务监测表会显示每条任务是否触发禁飞区。
+
+五、如果部署后页面没有变化
+1. 等待 Render 部署完成，不要只看 GitHub 上传状态。
+2. 浏览器按 Ctrl + F5 强制刷新。
+3. 访问 /health 检查服务是否运行：
+   https://shanghai-drone-risk-prediction.onrender.com/health

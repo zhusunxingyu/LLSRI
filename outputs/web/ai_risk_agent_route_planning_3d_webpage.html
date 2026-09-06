@@ -99,6 +99,12 @@
         <option value="corridor">安全走廊</option>
         <option value="detour">绕行避险</option>
       </select>
+      <label>合规约束</label>
+      <select id="noFlyMode">
+        <option value="strict" selected>启用禁飞区检测与绕飞建议</option>
+        <option value="display">仅显示禁飞区</option>
+        <option value="off">关闭禁飞区图层</option>
+      </select>
       <label>监测模式</label>
       <select id="monitorMode">
         <option value="single" selected>单航线监测</option>
@@ -129,7 +135,7 @@
       <button id="weatherBtn" class="full">获取起终点中点实时天气</button>
       <button class="primary full" id="generate">生成航线并预测风险</button>
       <div class="status" id="weatherText">天气：尚未获取，默认风速 4m/s。</div>
-      <p class="small">二维视图为全国在线地图；三维视图使用在线地图瓦片作为真实场景底图，并叠加立体建筑、飞行高度层和动态无人机。天地图底图和定位需要填写天地图 Key。</p>
+      <p class="small">二维视图为全国在线地图；三维视图使用在线地图瓦片作为真实场景底图，并叠加立体建筑、飞行高度层和动态无人机。禁飞区用于合规风险检测、绕飞提示和飞行建议。</p>
     </section>
     <section class="view-wrap">
       <div class="view-switch">
@@ -200,12 +206,75 @@
       social: 0.0567,
       compliance: 0.1214,
     };
+    const noFlyZones = [
+      { name:'浦东国际机场净空保护区', type:'机场净空', lon:121.8052, lat:31.1434, radius:9000, severity:1.00 },
+      { name:'虹桥机场净空保护区', type:'机场净空', lon:121.3279, lat:31.2000, radius:7000, severity:.92 },
+      { name:'北京首都机场净空保护区', type:'机场净空', lon:116.5975, lat:40.0799, radius:9000, severity:1.00 },
+      { name:'北京大兴机场净空保护区', type:'机场净空', lon:116.4109, lat:39.5098, radius:9000, severity:1.00 },
+      { name:'深圳宝安机场净空保护区', type:'机场净空', lon:113.8140, lat:22.6393, radius:8500, severity:1.00 },
+      { name:'广州白云机场净空保护区', type:'机场净空', lon:113.2988, lat:23.3924, radius:9000, severity:1.00 },
+      { name:'陆家嘴核心管控区', type:'核心商务管控', lon:121.5020, lat:31.2363, radius:1600, severity:.74 },
+      { name:'人民广场核心管控区', type:'核心商务管控', lon:121.4752, lat:31.2288, radius:1400, severity:.70 },
+      { name:'同济大学敏感保护区', type:'医院学校敏感区', lon:121.5062, lat:31.2824, radius:1200, severity:.68 },
+      { name:'瑞金医院敏感保护区', type:'医院学校敏感区', lon:121.4708, lat:31.2116, radius:1100, severity:.72 },
+      { name:'上海虹桥站交通枢纽管控区', type:'交通枢纽管控', lon:121.3279, lat:31.2000, radius:2300, severity:.76 },
+      { name:'上海火车站交通枢纽管控区', type:'交通枢纽管控', lon:121.4559, lat:31.2495, radius:1500, severity:.66 },
+    ];
     let trajectory = [], trajectories = {}, activeTrajectoryName = '', idx = 0, timer = null, activeView = '2d';
     const routePalette = { "最短直飞航线":"#1565c0", "自动直飞航线":"#1565c0", "安全走廊航线":"#2e7d32", "绕行避险航线":"#ef6c00" };
     const taskColors = ['#1565c0', '#2e7d32', '#ef6c00', '#7b1fa2', '#00838f', '#c62828', '#5d4037', '#455a64'];
     let currentWeather = { source:'默认参数', summary:'未接入实时天气', temperature:28, humidity:60, precipitation:0, wind:4, gust:6, direction:0, weatherRisk:.18 };
     const map = L.map('map2d').setView([35.8617, 104.1954], 5);
     let baseLayers = [];
+    const noFlyLayer = L.layerGroup().addTo(map);
+    function noFlyEnabled() {
+      return (document.getElementById('noFlyMode')?.value || 'strict') !== 'off';
+    }
+    function noFlyStrict() {
+      return (document.getElementById('noFlyMode')?.value || 'strict') === 'strict';
+    }
+    function renderNoFlyZones() {
+      noFlyLayer.clearLayers();
+      if (!noFlyEnabled()) return;
+      noFlyZones.forEach(zone => {
+        const fillColor = zone.type.includes('机场') ? '#b71c1c' : (zone.type.includes('医院') ? '#d84315' : '#c62828');
+        L.circle([zone.lat, zone.lon], {
+          radius: zone.radius,
+          color: '#b71c1c',
+          weight: 2,
+          dashArray: zone.type.includes('机场') ? null : '7,5',
+          fillColor,
+          fillOpacity: .10,
+        }).bindTooltip(`${zone.name}｜${zone.type}`).addTo(noFlyLayer);
+      });
+    }
+    function assessNoFlyPoint(lon, lat) {
+      if (!noFlyStrict()) return { score:0, nearest:null, distance:Infinity, inside:false };
+      let best = { score:0, nearest:null, distance:Infinity, inside:false };
+      noFlyZones.forEach(zone => {
+        const d = haversine(lon, lat, zone.lon, zone.lat);
+        const inside = d <= zone.radius;
+        const buffer = zone.radius + 1800;
+        const score = inside ? zone.severity : (d <= buffer ? zone.severity * (1 - (d - zone.radius) / 1800) * .55 : 0);
+        if (score > best.score || d < best.distance) {
+          best = { score:Math.max(0, Math.min(1, score)), nearest:zone, distance:d, inside };
+        }
+      });
+      return best;
+    }
+    function assessNoFlyRoute(points) {
+      if (!points || !points.length || !noFlyStrict()) return { maxScore:0, insideCount:0, nearest:null, minDistance:Infinity };
+      return points.reduce((acc, p) => {
+        const a = assessNoFlyPoint(p.lon, p.lat);
+        if (a.score > acc.maxScore) acc.maxScore = a.score;
+        if (a.inside) acc.insideCount += 1;
+        if (a.distance < acc.minDistance) {
+          acc.minDistance = a.distance;
+          acc.nearest = a.nearest;
+        }
+        return acc;
+      }, { maxScore:0, insideCount:0, nearest:null, minDistance:Infinity });
+    }
     function tiandituWmts(layer, tile) {
       const tk = TIANDITU_KEY;
       return `https://t0.tianditu.gov.cn/${layer}_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=${layer}&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX=${tile.z}&TILEROW=${tile.y}&TILECOL=${tile.x}&tk=${encodeURIComponent(tk)}`;
@@ -240,6 +309,7 @@
       addBaseLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' });
     }
     apply2DBaseLayer();
+    renderNoFlyZones();
     let routeLine = L.polyline([], { color: '#1565c0', weight: 4, opacity: .38 }).addTo(map);
     let flownLine = L.polyline([], { color: '#0d47a1', weight: 5, opacity: .95 }).addTo(map);
     let compareRouteLayers = [], compareFlownLayers = {};
@@ -393,6 +463,31 @@
         box.position.set(pos.x + ((i % 5) - 2) * 52, h / 2, pos.z + ((i % 7) - 3) * 42);
         sceneState.buildings.add(box);
       });
+      if (noFlyEnabled()) {
+        const center = trajectory[Math.floor(trajectory.length / 2)];
+        noFlyZones.forEach(zone => {
+          const zonePos = {
+            lon: zone.lon,
+            lat: zone.lat,
+            altitude: 2,
+          };
+          const pos = toXYZ(zonePos);
+          if (Math.abs(pos.x) > 1350 || Math.abs(pos.z) > 1350) return;
+          const radius = Math.max(36, Math.min(260, zone.radius / 18));
+          const mat = new THREE.MeshBasicMaterial({ color:0xb71c1c, transparent:true, opacity:.16, side:THREE.DoubleSide });
+          const disc = new THREE.Mesh(new THREE.CircleGeometry(radius, 64), mat);
+          disc.rotation.x = -Math.PI / 2;
+          disc.position.set(pos.x, 4, pos.z);
+          sceneState.riskGroup.add(disc);
+          const ring = new THREE.Mesh(
+            new THREE.TorusGeometry(radius, 2.8, 8, 96),
+            new THREE.MeshBasicMaterial({ color:0xb71c1c })
+          );
+          ring.rotation.x = Math.PI / 2;
+          ring.position.set(pos.x, 9, pos.z);
+          sceneState.riskGroup.add(ring);
+        });
+      }
       trajectory.filter(p => p.ai >= .4).filter((p, i) => i % 9 === 0).forEach(p => {
         const pos = toXYZ(p);
         const color = new THREE.Color(levelColors[p.level] || '#607d8b');
@@ -770,12 +865,13 @@
       return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
     function level(score) { if (score >= .80) return '红色'; if (score >= .60) return '橙色'; if (score >= .40) return '黄色'; if (score >= .20) return '蓝色'; return '正常'; }
-    function chooseRouteMode(distance, weatherRiskValue, droneCount, startZone, endZone, selectedStrategy) {
+    function chooseRouteMode(distance, weatherRiskValue, droneCount, startZone, endZone, selectedStrategy, noFlyRouteRisk=0) {
       if (selectedStrategy === 'direct') return { name:'最短直飞航线', code:'direct', factor:1.00, bend:0, altitudeBase:90 };
       if (selectedStrategy === 'corridor') return { name:'安全走廊航线', code:'corridor', factor:1.16, bend:.018, altitudeBase:105 };
       if (selectedStrategy === 'detour') return { name:'绕行避险航线', code:'detour', factor:1.24, bend:.026, altitudeBase:110 };
       const sensitive = startZone.includes('医院') || endZone.includes('医院');
       const water = startZone.includes('滨水') || endZone.includes('滨水');
+      if (noFlyRouteRisk >= .45) return { name:'绕行避险航线', code:'detour', factor:1.28, bend:.034, altitudeBase:112 };
       if (sensitive || weatherRiskValue >= .42 || droneCount >= 10) return { name:'安全走廊航线', code:'corridor', factor:1.16, bend:.018, altitudeBase:105 };
       if (distance >= 9000 || water) return { name:'绕行避险航线', code:'detour', factor:1.24, bend:.026, altitudeBase:110 };
       return { name:'自动直飞航线', code:'direct', factor:1.04, bend:.010, altitudeBase:90 };
@@ -880,9 +976,12 @@
     }
     async function buildPredictedRoute(selectedStrategy, context, taskLabel='') {
       const { slon, slat, elon, elat, speed, payloadRate, droneCount, windValue, gps, initialSoc, soh, healthBaseRisk, weatherRiskValue, distance, startZone, endZone, midZone } = context;
-      const routeModeInfo = chooseRouteMode(distance, weatherRiskValue, droneCount, startZone, endZone, selectedStrategy);
+      const directCheck = buildFallbackRoute(slon, slat, elon, elat, { bend:0 }, 80);
+      const directNoFly = assessNoFlyRoute(directCheck);
+      const routeModeInfo = chooseRouteMode(distance, weatherRiskValue, droneCount, startZone, endZone, selectedStrategy, directNoFly.maxScore);
       let baseRoute = await fetchRealRoute(slon, slat, elon, elat, routeModeInfo, selectedStrategy);
       if (!baseRoute || baseRoute.length < 2) baseRoute = buildFallbackRoute(slon, slat, elon, elat, routeModeInfo, 180);
+      const routeNoFly = assessNoFlyRoute(baseRoute);
       const realRouteDistance = routeLength(baseRoute);
       const plannedDistance = selectedStrategy === 'direct' ? distance * routeModeInfo.factor : realRouteDistance;
       const duration = Math.max(90, Math.round(plannedDistance / Math.max(speed, 1) + 80));
@@ -898,18 +997,20 @@
         const social = Math.min(1, .16 + sensitive * .5 + (zone.includes('核心') ? .2 : 0) + (zone.includes('居住') ? .16 : 0));
         const airspace = Math.min(1, .08 + droneCount / 24 + progress * .12);
         const environment = Math.min(1, .06 + weatherRiskValue * .62 + windValue / 30 + gps / 50 + (zone.includes('滨水') ? .12 : 0));
-        const altitude = dynamicAltitude(routeModeInfo, zone, r, environment, .25 + sensitive * .34, airspace);
-        const compliance = Math.min(1, .10 + sensitive * .42 + (altitude < 70 ? .13 : 0) + (zone.includes('滨水') ? .08 : 0) - (routeModeInfo.name.includes('安全') ? .05 : 0));
+        const noFly = assessNoFlyPoint(lon, lat);
+        const altitude = dynamicAltitude(routeModeInfo, zone, r, environment, .25 + sensitive * .34 + noFly.score * .42, airspace);
+        const compliance = Math.min(1, .10 + sensitive * .42 + (altitude < 70 ? .13 : 0) + (zone.includes('滨水') ? .08 : 0) + noFly.score * .62 - (routeModeInfo.name.includes('安全') ? .05 : 0) - (routeModeInfo.name.includes('绕行') ? .08 : 0));
         const mission = Math.min(1, .12 + payloadRate * .28 + distance / 18000 + (1 - r) * .04);
         const health = Math.min(1, .08 + healthBaseRisk * .65 + payloadRate * .12 + windValue / 42 + r * .18);
         const llsri = Math.min(1, AHP_WEIGHTS.environment * environment + AHP_WEIGHTS.health * health + AHP_WEIGHTS.mission * mission + AHP_WEIGHTS.airspace * airspace + AHP_WEIGHTS.social * social + AHP_WEIGHTS.compliance * compliance);
-        const ai = Math.min(1, llsri + progress * .08 + Math.max(0, compliance - .35) * .18 + Math.max(0, airspace - .35) * .14 + Math.max(0, health - .36) * .12);
+        const ai = Math.min(1, llsri + progress * .08 + Math.max(0, compliance - .35) * .18 + Math.max(0, airspace - .35) * .14 + Math.max(0, health - .36) * .12 + noFly.score * .12);
         let heading = 0;
         if (i > 0) {
           const prev = route[i - 1];
           heading = (Math.atan2(lon - prev.lon, lat - prev.lat) * 180 / Math.PI + 360) % 360;
         }
-        route.push({ timestamp:Math.round(r * duration), lat, lon, heading, altitude, routeMode:routeModeInfo.name, llsri, ai, social, health, environment, airspace, mission, compliance, weatherRisk:weatherRiskValue, level:level(ai), zone, reason:`${routeModeInfo.name}; 功能区:${zone}; 动态高度:${altitude.toFixed(0)}m; 天气:${currentWeather.summary}; 风速:${windValue.toFixed(1)}m/s; 合规风险:${compliance.toFixed(2)}; 健康风险:${health.toFixed(2)}` });
+        const noFlyText = noFly.nearest ? `; 最近禁飞区:${noFly.nearest.name}; 距离:${Math.round(noFly.distance)}m${noFly.inside ? '; 已进入禁飞区' : ''}` : '';
+        route.push({ timestamp:Math.round(r * duration), lat, lon, heading, altitude, routeMode:routeModeInfo.name, llsri, ai, social, health, environment, airspace, mission, compliance, noFlyRisk:noFly.score, noFlyZone:noFly.nearest ? noFly.nearest.name : '', noFlyInside:noFly.inside, weatherRisk:weatherRiskValue, level:level(ai), zone, reason:`${routeModeInfo.name}; 功能区:${zone}; 动态高度:${altitude.toFixed(0)}m; 天气:${currentWeather.summary}; 风速:${windValue.toFixed(1)}m/s; 合规风险:${compliance.toFixed(2)}; 健康风险:${health.toFixed(2)}${noFlyText}` });
       }
       const modelResult = await predictWithLocalXgboost(route, {
         start_lon: slon,
@@ -936,14 +1037,16 @@
       if (modelResult) {
         route.forEach((point, index) => {
           const pred = modelResult.predictions[index];
-          point.ai = Number(pred.ai_operation_risk);
+          const modelRisk = Number(pred.ai_operation_risk);
+          point.ai = Math.min(1, Math.max(modelRisk, point.llsri + point.noFlyRisk * .16, modelRisk + point.noFlyRisk * .10));
           point.level = pred.ai_operation_level || level(point.ai);
+          point.level = level(point.ai);
           point.reason += `; 模型:${modelResult.model_type}`;
         });
       } else {
         route.forEach(point => { point.reason += '; 模型接口未启动，使用网页内置公式估算'; });
       }
-      return { name: taskLabel || routeModeInfo.name, routeName: routeModeInfo.name, code: routeModeInfo.code || selectedStrategy, route, distance: plannedDistance, duration, modelUsed: Boolean(modelResult) };
+      return { name: taskLabel || routeModeInfo.name, routeName: routeModeInfo.name, code: routeModeInfo.code || selectedStrategy, route, distance: plannedDistance, duration, modelUsed: Boolean(modelResult), noFlySummary:routeNoFly };
     }
     function taskStats(result) {
       const maxRiskValue = Math.max(...result.route.map(item => item.ai));
@@ -956,6 +1059,7 @@
         durationText: `${Math.floor(result.duration / 60)}分${result.duration % 60}秒`,
         distanceText: `${(result.distance / 1000).toFixed(2)} km`,
         maxPoint,
+        noFlyText: result.noFlySummary && result.noFlySummary.maxScore > .05 ? `${result.noFlySummary.nearest?.name || '禁飞区'} ${result.noFlySummary.insideCount ? '穿越' : '接近'}` : '未触发',
       };
     }
     function setActiveTrajectory(name, resetIndex=false) {
@@ -995,13 +1099,13 @@
 
         const row = document.createElement('tr');
         row.className = name === activeTrajectoryName ? 'active' : '';
-        row.innerHTML = `<td>${name}</td><td>${stats.maxRisk.toFixed(3)}</td><td style="color:${levelColors[stats.level] || '#263238'}">${stats.level}</td><td>${stats.durationText}</td>`;
+        row.innerHTML = `<td>${name}<br><span class="small">禁飞区：${stats.noFlyText}</span></td><td>${stats.maxRisk.toFixed(3)}</td><td style="color:${levelColors[stats.level] || '#263238'}">${stats.level}</td><td>${stats.durationText}</td>`;
         row.addEventListener('click', () => setActiveTrajectory(name, true));
         tableBody.appendChild(row);
 
         const legendRow = document.createElement('div');
         legendRow.className = `legend-row ${name === activeTrajectoryName ? 'active' : ''}`;
-        legendRow.innerHTML = `<span class="legend-dot" style="background:${color}"></span><span>${name}<br>${stats.distanceText}｜${stats.durationText}</span><b style="color:${levelColors[stats.level] || '#263238'}">${stats.maxRisk.toFixed(3)}</b>`;
+        legendRow.innerHTML = `<span class="legend-dot" style="background:${color}"></span><span>${name}<br>${stats.distanceText}｜${stats.durationText}｜禁飞区:${stats.noFlyText}</span><b style="color:${levelColors[stats.level] || '#263238'}">${stats.maxRisk.toFixed(3)}</b>`;
         legendRow.addEventListener('click', () => setActiveTrajectory(name, true));
         legend.appendChild(legendRow);
       });
@@ -1124,6 +1228,8 @@
     }
     function adviceFor(p) {
       const items = [];
+      if (p.noFlyInside) items.push(`已进入或压线 ${p.noFlyZone}，应立即退出该空域并执行返航、备降或人工接管`);
+      else if (p.noFlyRisk >= .35) items.push(`接近 ${p.noFlyZone}，建议改选绕行避险航线并保持安全缓冲距离`);
       if (p.ai >= .60) items.push('立即切换到安全走廊或绕行避险航线');
       if (p.ai >= .40) items.push('缩短风险预测刷新间隔，重点关注前方高风险点');
       if (p.weatherRisk >= .40) items.push('受实时天气影响，建议降低巡航速度并增加抗风裕度');
@@ -1160,6 +1266,9 @@
       levelEl.style.color = levelColors[p.level] || '#263238';
       const warning = warningFor(p);
       warningText.innerHTML = `<b style="color:${levelColors[p.level] || '#263238'}">${warning.title}</b><br>${warning.text}`;
+      if (p.noFlyRisk >= .35) {
+        warningText.innerHTML += `<br><b style="color:#b71c1c">禁飞区提示</b><br>${p.noFlyInside ? '当前轨迹已进入禁飞区，应立即退出。' : '当前轨迹接近禁飞/严格管控区域，应提前绕飞。'}`;
+      }
       const compareText = names.length > 1 ? '<br>' + names.map(name => {
         const result = trajectories[name];
         const maxValue = Math.max(...result.route.map(item => item.ai));
@@ -1219,6 +1328,7 @@
     document.getElementById('btn2d').addEventListener('click', () => switchView('2d'));
     document.getElementById('btn3d').addEventListener('click', () => switchView('3d'));
     document.getElementById('mapProvider').addEventListener('change', () => { apply2DBaseLayer(); refresh3D(); });
+    document.getElementById('noFlyMode').addEventListener('change', async () => { renderNoFlyZones(); await generateTrajectory(); });
     fetchWeather().then(() => generateTrajectory()).catch(() => generateTrajectory());
   </script>
 </body>
