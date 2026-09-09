@@ -1,0 +1,1335 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>低空物流安全风险预警平台</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "Microsoft YaHei", Arial, sans-serif; color: #1f2933; background: #f4f7fb; }
+    header { padding: 18px 26px; background: #102a43; color: #fff; }
+    header h1 { margin: 0 0 7px; font-size: 25px; letter-spacing: 0; }
+    header p { margin: 0; color: #d9e2ec; }
+    main { display: grid; grid-template-columns: 350px 1fr 380px; gap: 15px; padding: 15px; }
+    .panel { background: white; border: 1px solid #d9e2ec; border-radius: 8px; padding: 14px; }
+    h2 { margin: 0 0 12px; font-size: 18px; }
+    label { display: block; margin: 9px 0 5px; font-size: 13px; color: #52606d; }
+    input, select, textarea { width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 9px; background: #fff; color: #1f2933; }
+    textarea { min-height: 86px; resize: vertical; line-height: 1.5; }
+    button { border: 1px solid #1565c0; border-radius: 6px; padding: 9px 12px; background: #fff; color: #0d47a1; cursor: pointer; }
+    button.primary { background: #1565c0; color: white; }
+    button.active { background: #0d47a1; color: white; }
+    .full { width: 100%; margin-top: 14px; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+    .view-wrap { position: relative; height: calc(100vh - 118px); min-height: 620px; border: 1px solid #d9e2ec; border-radius: 8px; overflow: hidden; background: #dce8ef; }
+    #map2d, #map3d { position: absolute; inset: 0; }
+    #map3d { display: none; background: #dce8ef; }
+    #map3d canvas { display: block; width: 100%; height: 100%; }
+    .three-warning { padding: 80px 28px; font-size: 16px; color: #334e68; line-height: 1.8; }
+    .view-switch { position: absolute; z-index: 600; left: 12px; top: 12px; display: flex; gap: 8px; background: rgba(255,255,255,.94); border: 1px solid #d9e2ec; border-radius: 8px; padding: 8px; box-shadow: 0 8px 24px rgba(20,42,70,.14); }
+    .legend3d { position: absolute; z-index: 600; right: 12px; bottom: 12px; width: 220px; background: rgba(255,255,255,.92); border: 1px solid #d9e2ec; border-radius: 8px; padding: 10px; font-size: 12px; line-height: 1.7; }
+    .map-task-legend { position: absolute; z-index: 610; left: 12px; bottom: 12px; max-width: min(520px, calc(100% - 24px)); max-height: 230px; overflow: auto; background: rgba(255,255,255,.94); border: 1px solid #d9e2ec; border-radius: 8px; padding: 10px; box-shadow: 0 8px 24px rgba(20,42,70,.14); font-size: 12px; }
+    .legend-row { display: grid; grid-template-columns: 10px 1fr auto; align-items: center; gap: 8px; padding: 5px 4px; border-radius: 6px; cursor: pointer; }
+    .legend-row.active { background: #eef6ff; }
+    .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .task-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 10px; }
+    .task-table th, .task-table td { border-bottom: 1px solid #e5ebf1; padding: 7px 5px; text-align: left; vertical-align: top; }
+    .task-table th { color: #52606d; font-weight: 600; background: #f8fafc; }
+    .task-table tr { cursor: pointer; }
+    .task-table tr.active { background: #eef6ff; }
+    .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+    .metric { background: #f8fafc; border: 1px solid #e5ebf1; border-radius: 8px; padding: 10px; min-height: 68px; }
+    .metric span { display: block; color: #627d98; font-size: 12px; }
+    .metric strong { display: block; margin-top: 6px; font-size: 19px; }
+    .controls { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+    .controls select { width: auto; }
+    .status { margin-top: 10px; padding: 10px; background: #eef6ff; border-left: 4px solid #1565c0; border-radius: 6px; line-height: 1.65; font-size: 14px; }
+    .small { color: #627d98; font-size: 12px; line-height: 1.55; }
+    .uav-wrap { background: transparent; border: 0; }
+    .uav-drone { position: relative; width: 44px; height: 44px; transform-origin: center center; filter: drop-shadow(0 4px 8px rgba(13,71,161,.38)); }
+    .arm { position: absolute; left: 8px; top: 20px; width: 28px; height: 4px; background: #0d47a1; border-radius: 999px; }
+    .arm.y { transform: rotate(90deg); }
+    .body { position: absolute; left: 14px; top: 14px; width: 16px; height: 16px; border-radius: 5px; background: white; border: 3px solid #0d47a1; }
+    .nose { position: absolute; left: 19px; top: 6px; width: 6px; height: 11px; border-radius: 6px 6px 2px 2px; background: #ffb300; border: 1px solid #0d47a1; }
+    .rotor { position: absolute; width: 13px; height: 13px; border-radius: 50%; background: white; border: 3px solid #1565c0; }
+    .rotor::after { content: ""; position: absolute; left: -5px; top: 3px; width: 17px; height: 2px; background: #90a4ae; border-radius: 999px; animation: spin .5s linear infinite; }
+    .r1 { left: 0; top: 0; } .r2 { right: 0; top: 0; } .r3 { left: 0; bottom: 0; } .r4 { right: 0; bottom: 0; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    canvas { max-height: 250px; }
+    @media (max-width: 1180px) { main { grid-template-columns: 1fr; } .view-wrap { height: 560px; min-height: 520px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>低空物流安全风险预警平台</h1>
+  </header>
+  <main>
+    <section class="panel">
+      <h2>航线设定</h2>
+      <label>城市/区域</label>
+      <input id="cityHint" type="text" value="上海" placeholder="如：上海、北京、深圳南山">
+      <label>起点文字输入</label>
+      <div class="grid2">
+        <input id="startSearch" type="text" value="陆家嘴" placeholder="如：北京国贸、深圳北站、杭州西湖">
+        <button id="searchStart">定位起点</button>
+      </div>
+      <label>起点常用地点</label><select id="startPlace"></select>
+      <div class="grid2">
+        <div><label>起点经度</label><input id="startLon" type="number" step="0.000001"></div>
+        <div><label>起点纬度</label><input id="startLat" type="number" step="0.000001"></div>
+      </div>
+      <label>终点文字输入</label>
+      <div class="grid2">
+        <input id="endSearch" type="text" value="同济大学四平路校区" placeholder="如：北京首都机场、广州南站、武汉光谷">
+        <button id="searchEnd">定位终点</button>
+      </div>
+      <label>终点常用地点</label><select id="endPlace"></select>
+      <div class="grid2">
+        <div><label>终点经度</label><input id="endLon" type="number" step="0.000001"></div>
+        <div><label>终点纬度</label><input id="endLat" type="number" step="0.000001"></div>
+      </div>
+      <label>航线策略</label>
+      <select id="routeStrategy">
+        <option value="auto" selected>智能推荐</option>
+        <option value="direct">最短直飞</option>
+        <option value="corridor">安全走廊</option>
+        <option value="detour">绕行避险</option>
+      </select>
+      <label>合规约束</label>
+      <select id="noFlyMode">
+        <option value="strict" selected>启用禁飞区检测与绕飞建议</option>
+        <option value="display">仅显示禁飞区</option>
+        <option value="off">关闭禁飞区图层</option>
+      </select>
+      <label>监测模式</label>
+      <select id="monitorMode">
+        <option value="single" selected>单航线监测</option>
+        <option value="multi">多任务同时监测</option>
+      </select>
+      <label>多任务输入</label>
+      <textarea id="multiTasks" placeholder="每行一个任务，如：陆家嘴 -> 同济大学四平路校区">陆家嘴 -> 同济大学四平路校区
+上海虹桥站 -> 瑞金医院
+张江高科 -> 杨浦滨江</textarea>
+      <label>地图底图</label>
+      <select id="mapProvider">
+        <option value="osm" selected>OpenStreetMap</option>
+        <option value="esri_img">Esri卫星影像</option>
+        <option value="tianditu_img">天地图影像</option>
+        <option value="tianditu_vec">天地图矢量</option>
+      </select>
+      <div class="grid2">
+        <div><label>巡航速度 m/s</label><input id="speedMs" type="number" min="4" max="18" step="0.5" value="10"></div>
+        <div><label>载重率</label><input id="payload" type="number" min="0" max="1" step="0.05" value="0.45"></div>
+        <div><label>同域无人机数</label><input id="droneCount" type="number" min="1" max="20" step="1" value="5"></div>
+        <div><label>风速 m/s</label><input id="wind" type="number" min="0" max="18" step="0.5" value="4"></div>
+        <div><label>GPS误差 m</label><input id="gps" type="number" min="0" max="10" step="0.5" value="3"></div>
+        <div><label>电池SOC</label><input id="batterySoc" type="number" min="0.15" max="1" step="0.05" value="0.85"></div>
+        <div><label>电池健康SOH</label><input id="batterySoh" type="number" min="0.5" max="1" step="0.05" value="0.90"></div>
+        <div><label>电机健康</label><input id="motorHealth" type="number" min="0.5" max="1" step="0.05" value="0.92"></div>
+        <div><label>通信链路质量</label><input id="linkQuality" type="number" min="0.3" max="1" step="0.05" value="0.88"></div>
+      </div>
+      <button id="weatherBtn" class="full">获取起终点中点实时天气</button>
+      <button class="primary full" id="generate">生成航线并预测风险</button>
+      <div class="status" id="weatherText">天气：尚未获取，默认风速 4m/s。</div>
+      <p class="small">二维视图为全国在线地图；三维视图使用在线地图瓦片作为真实场景底图，并叠加立体建筑、飞行高度层和动态无人机。禁飞区用于合规风险检测、绕飞提示和飞行建议。</p>
+    </section>
+    <section class="view-wrap">
+      <div class="view-switch">
+        <button id="btn2d" class="active">二维地图</button>
+        <button id="btn3d">三维立体</button>
+      </div>
+      <div id="map2d"></div>
+      <div id="map3d"></div>
+      <div class="map-task-legend" id="mapTaskLegend">地图任务图例将在生成后显示。</div>
+      <div class="legend3d" id="legend3d" style="display:none;">
+        <b>三维图例</b><br>
+        蓝色曲线：计划航线<br>
+        深蓝曲线：已飞航段<br>
+        地面纹理：真实卫星影像瓦片<br>
+        半透明体块：城市建筑/功能区代理<br>
+        浅蓝色带：滨水/河道场景代理<br>
+        红橙黄点：风险较高位置
+      </div>
+    </section>
+    <aside>
+      <div class="panel">
+        <h2>AI风险监测</h2>
+        <label>当前监测任务</label>
+        <select id="activeTaskSelect"></select>
+        <div class="metrics">
+          <div class="metric"><span>航线距离</span><strong id="distance">-</strong></div>
+          <div class="metric"><span>预计飞行时间</span><strong id="duration">-</strong></div>
+          <div class="metric"><span>当前风险</span><strong id="currentRisk">-</strong></div>
+          <div class="metric"><span>最高风险</span><strong id="maxRisk">-</strong></div>
+          <div class="metric"><span>预警等级</span><strong id="level">-</strong></div>
+          <div class="metric"><span>功能区</span><strong id="zone">-</strong></div>
+          <div class="metric"><span>天气风险</span><strong id="weatherRisk">-</strong></div>
+          <div class="metric"><span>健康风险</span><strong id="healthRisk">-</strong></div>
+          <div class="metric"><span>航线策略</span><strong id="routeMode">-</strong></div>
+          <div class="metric"><span>动态高度</span><strong id="altitudeNow">-</strong></div>
+        </div>
+        <table class="task-table" id="taskSummaryTable">
+          <thead><tr><th>任务</th><th>最高风险</th><th>等级</th><th>时间</th></tr></thead>
+          <tbody><tr><td colspan="4">暂无任务</td></tr></tbody>
+        </table>
+        <div class="controls">
+          <button class="primary" id="play">播放</button>
+          <button id="pause">暂停</button>
+          <button id="restart">重播</button>
+          <select id="playSpeed"><option value="220">1x</option><option value="110" selected>2x</option><option value="55">4x</option><option value="28">8x</option></select>
+        </div>
+        <div class="status" id="agentText">请先生成航线。</div>
+      </div>
+      <div class="panel"><h2>飞行风险曲线</h2><canvas id="riskChart"></canvas></div>
+      <div class="panel">
+        <h2>智能体风险预警</h2>
+        <div class="status" id="warningText">生成航线后显示。</div>
+      </div>
+      <div class="panel"><h2>智能体飞行建议</h2><p id="advice">生成航线后显示。</p></div>
+    </aside>
+  </main>
+  <script>
+    const places = {"陆家嘴": [121.502, 31.2363, "核心商务区"], "人民广场": [121.4752, 31.2288, "核心商务区"], "上海虹桥站": [121.3279, 31.2, "交通枢纽区"], "上海火车站": [121.4559, 31.2495, "交通枢纽区"], "同济大学四平路校区": [121.5062, 31.2824, "医院学校敏感区"], "复旦大学": [121.503, 31.2989, "医院学校敏感区"], "瑞金医院": [121.4708, 31.2116, "医院学校敏感区"], "徐家汇": [121.4375, 31.1883, "居住区"], "静安寺": [121.4453, 31.2231, "居住区"], "张江高科": [121.587, 31.2019, "工业园区"], "金桥开发区": [121.6105, 31.2572, "工业园区"], "杨浦滨江": [121.5422, 31.2636, "滨水/跨江区"], "徐汇滨江": [121.4599, 31.1755, "滨水/跨江区"], "滴水湖": [121.935, 30.9086, "滨水/跨江区"], "北京国贸": [116.461, 39.9149, "核心商务区"], "北京中关村": [116.3162, 39.9839, "工业园区"], "北京协和医院": [116.4147, 39.9123, "医院学校敏感区"], "北京首都机场": [116.5975, 40.0799, "交通枢纽区"], "深圳福田CBD": [114.0579, 22.5431, "核心商务区"], "深圳南山区科技园": [113.9469, 22.5405, "工业园区"], "深圳北站": [114.0293, 22.6099, "交通枢纽区"], "广州珠江新城": [113.3236, 23.12, "核心商务区"], "广州南站": [113.2697, 22.9885, "交通枢纽区"], "杭州西湖": [120.1489, 30.246, "滨水/跨江区"], "杭州未来科技城": [120.0005, 30.2792, "工业园区"], "南京新街口": [118.7849, 32.0419, "核心商务区"], "武汉光谷": [114.4097, 30.5066, "工业园区"], "武汉长江大桥": [114.289, 30.5522, "滨水/跨江区"], "成都天府广场": [104.0658, 30.6574, "核心商务区"], "成都双流机场": [103.9471, 30.5785, "交通枢纽区"], "重庆解放碑": [106.5765, 29.557, "核心商务区"], "重庆两江新区": [106.5484, 29.8155, "滨水/跨江区"], "西安钟楼": [108.9402, 34.3416, "核心商务区"], "郑州东站": [113.7787, 34.7595, "交通枢纽区"], "青岛五四广场": [120.3842, 36.061, "滨水/跨江区"], "厦门软件园": [118.179, 24.4887, "工业园区"], "天津滨海新区": [117.6984, 39.0174, "滨水/跨江区"], "苏州工业园区": [120.7069, 31.3202, "工业园区"], "宁波鄞州区": [121.5504, 29.8173, "居住区"], "合肥高新区": [117.1358, 31.8326, "工业园区"], "清华大学": [116.3267, 40.003, "医院学校敏感区"], "北京大学": [116.3109, 39.9928, "医院学校敏感区"], "浙江大学紫金港校区": [120.0867, 30.308, "医院学校敏感区"], "南京大学鼓楼校区": [118.7789, 32.0569, "医院学校敏感区"], "武汉大学": [114.3652, 30.539, "医院学校敏感区"], "华中科技大学": [114.4146, 30.5134, "医院学校敏感区"], "四川大学华西医院": [104.0648, 30.6417, "医院学校敏感区"], "中山大学附属第一医院": [113.2925, 23.1264, "医院学校敏感区"], "上海交通大学闵行校区": [121.431, 31.0252, "医院学校敏感区"], "浦东国际机场": [121.8052, 31.1434, "交通枢纽区"], "大兴国际机场": [116.4109, 39.5098, "交通枢纽区"], "深圳宝安机场": [113.814, 22.6393, "交通枢纽区"], "广州白云机场": [113.2988, 23.3924, "交通枢纽区"], "杭州东站": [120.2196, 30.291, "交通枢纽区"]};
+    const levelColors = {"正常": "#2e7d32", "蓝色": "#1565c0", "黄色": "#f9a825", "橙色": "#ef6c00", "红色": "#c62828"};
+    const AMAP_WEB_SERVICE_KEY = '6cd166539609058b3393102de4882f49';
+    const BAIDU_AK = '';
+    const TIANDITU_KEY = '';
+    const AHP_WEIGHTS = {
+      environment: 0.1127,
+      health: 0.3159,
+      mission: 0.2244,
+      airspace: 0.1689,
+      social: 0.0567,
+      compliance: 0.1214,
+    };
+    const noFlyZones = [
+      { name:'浦东国际机场净空保护区', type:'机场净空', lon:121.8052, lat:31.1434, radius:9000, severity:1.00 },
+      { name:'虹桥机场净空保护区', type:'机场净空', lon:121.3279, lat:31.2000, radius:7000, severity:.92 },
+      { name:'北京首都机场净空保护区', type:'机场净空', lon:116.5975, lat:40.0799, radius:9000, severity:1.00 },
+      { name:'北京大兴机场净空保护区', type:'机场净空', lon:116.4109, lat:39.5098, radius:9000, severity:1.00 },
+      { name:'深圳宝安机场净空保护区', type:'机场净空', lon:113.8140, lat:22.6393, radius:8500, severity:1.00 },
+      { name:'广州白云机场净空保护区', type:'机场净空', lon:113.2988, lat:23.3924, radius:9000, severity:1.00 },
+      { name:'陆家嘴核心管控区', type:'核心商务管控', lon:121.5020, lat:31.2363, radius:1600, severity:.74 },
+      { name:'人民广场核心管控区', type:'核心商务管控', lon:121.4752, lat:31.2288, radius:1400, severity:.70 },
+      { name:'同济大学敏感保护区', type:'医院学校敏感区', lon:121.5062, lat:31.2824, radius:1200, severity:.68 },
+      { name:'瑞金医院敏感保护区', type:'医院学校敏感区', lon:121.4708, lat:31.2116, radius:1100, severity:.72 },
+      { name:'上海虹桥站交通枢纽管控区', type:'交通枢纽管控', lon:121.3279, lat:31.2000, radius:2300, severity:.76 },
+      { name:'上海火车站交通枢纽管控区', type:'交通枢纽管控', lon:121.4559, lat:31.2495, radius:1500, severity:.66 },
+    ];
+    let trajectory = [], trajectories = {}, activeTrajectoryName = '', idx = 0, timer = null, activeView = '2d';
+    const routePalette = { "最短直飞航线":"#1565c0", "自动直飞航线":"#1565c0", "安全走廊航线":"#2e7d32", "绕行避险航线":"#ef6c00" };
+    const taskColors = ['#1565c0', '#2e7d32', '#ef6c00', '#7b1fa2', '#00838f', '#c62828', '#5d4037', '#455a64'];
+    let currentWeather = { source:'默认参数', summary:'未接入实时天气', temperature:28, humidity:60, precipitation:0, wind:4, gust:6, direction:0, weatherRisk:.18 };
+    const map = L.map('map2d').setView([35.8617, 104.1954], 5);
+    let baseLayers = [];
+    const noFlyLayer = L.layerGroup().addTo(map);
+    function noFlyEnabled() {
+      return (document.getElementById('noFlyMode')?.value || 'strict') !== 'off';
+    }
+    function noFlyStrict() {
+      return (document.getElementById('noFlyMode')?.value || 'strict') === 'strict';
+    }
+    function renderNoFlyZones() {
+      noFlyLayer.clearLayers();
+      if (!noFlyEnabled()) return;
+      noFlyZones.forEach(zone => {
+        const fillColor = zone.type.includes('机场') ? '#b71c1c' : (zone.type.includes('医院') ? '#d84315' : '#c62828');
+        L.circle([zone.lat, zone.lon], {
+          radius: zone.radius,
+          color: '#b71c1c',
+          weight: 2,
+          dashArray: zone.type.includes('机场') ? null : '7,5',
+          fillColor,
+          fillOpacity: .10,
+        }).bindTooltip(`${zone.name}｜${zone.type}`).addTo(noFlyLayer);
+      });
+    }
+    function assessNoFlyPoint(lon, lat) {
+      if (!noFlyStrict()) return { score:0, nearest:null, distance:Infinity, inside:false };
+      let best = { score:0, nearest:null, distance:Infinity, inside:false };
+      noFlyZones.forEach(zone => {
+        const d = haversine(lon, lat, zone.lon, zone.lat);
+        const inside = d <= zone.radius;
+        const buffer = zone.radius + 1800;
+        const score = inside ? zone.severity : (d <= buffer ? zone.severity * (1 - (d - zone.radius) / 1800) * .55 : 0);
+        if (score > best.score || d < best.distance) {
+          best = { score:Math.max(0, Math.min(1, score)), nearest:zone, distance:d, inside };
+        }
+      });
+      return best;
+    }
+    function assessNoFlyRoute(points) {
+      if (!points || !points.length || !noFlyStrict()) return { maxScore:0, insideCount:0, nearest:null, minDistance:Infinity };
+      return points.reduce((acc, p) => {
+        const a = assessNoFlyPoint(p.lon, p.lat);
+        if (a.score > acc.maxScore) acc.maxScore = a.score;
+        if (a.inside) acc.insideCount += 1;
+        if (a.distance < acc.minDistance) {
+          acc.minDistance = a.distance;
+          acc.nearest = a.nearest;
+        }
+        return acc;
+      }, { maxScore:0, insideCount:0, nearest:null, minDistance:Infinity });
+    }
+    function tiandituWmts(layer, tile) {
+      const tk = TIANDITU_KEY;
+      return `https://t0.tianditu.gov.cn/${layer}_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=${layer}&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX=${tile.z}&TILEROW=${tile.y}&TILECOL=${tile.x}&tk=${encodeURIComponent(tk)}`;
+    }
+    function clearBaseLayers() {
+      baseLayers.forEach(layer => map.removeLayer(layer));
+      baseLayers = [];
+    }
+    function addBaseLayer(url, options) {
+      const layer = L.tileLayer(url, options).addTo(map);
+      baseLayers.push(layer);
+      return layer;
+    }
+    function apply2DBaseLayer() {
+      clearBaseLayers();
+      const provider = document.getElementById('mapProvider')?.value || 'osm';
+      const tk = TIANDITU_KEY;
+      if (provider === 'tianditu_img' && tk) {
+        addBaseLayer('https://t0.tianditu.gov.cn/img_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=img&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=' + encodeURIComponent(tk), { maxZoom: 18, attribution: '&copy; 天地图' });
+        addBaseLayer('https://t0.tianditu.gov.cn/cia_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=cia&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=' + encodeURIComponent(tk), { maxZoom: 18, attribution: '&copy; 天地图' });
+        return;
+      }
+      if (provider === 'tianditu_vec' && tk) {
+        addBaseLayer('https://t0.tianditu.gov.cn/vec_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=vec&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=' + encodeURIComponent(tk), { maxZoom: 18, attribution: '&copy; 天地图' });
+        addBaseLayer('https://t0.tianditu.gov.cn/cva_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=cva&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=' + encodeURIComponent(tk), { maxZoom: 18, attribution: '&copy; 天地图' });
+        return;
+      }
+      if (provider === 'esri_img') {
+        addBaseLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: '&copy; Esri' });
+        return;
+      }
+      addBaseLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' });
+    }
+    apply2DBaseLayer();
+    renderNoFlyZones();
+    let routeLine = L.polyline([], { color: '#1565c0', weight: 4, opacity: .38 }).addTo(map);
+    let flownLine = L.polyline([], { color: '#0d47a1', weight: 5, opacity: .95 }).addTo(map);
+    let compareRouteLayers = [], compareFlownLayers = {};
+    let riskMarkers = [], startMarker = null, endMarker = null, taskDroneMarkers = {};
+    const droneIcon = L.divIcon({ html: '<div id="drone-inner" class="uav-drone"><span class="arm"></span><span class="arm y"></span><span class="rotor r1"></span><span class="rotor r2"></span><span class="rotor r3"></span><span class="rotor r4"></span><span class="body"></span><span class="nose"></span></div>', className: 'uav-wrap', iconSize: [44,44], iconAnchor: [22,22] });
+    let droneMarker = L.marker([31.2304, 121.4737], { icon: droneIcon }).addTo(map);
+    const chart = new Chart(document.getElementById('riskChart'), { type:'line', data:{ labels:[], datasets:[
+      { label:'飞行风险', data:[], borderColor:'#ef6c00', backgroundColor:'rgba(239,108,0,.12)', fill:true, pointRadius:0, tension:.24 }
+    ]}, options:{ responsive:true, animation:false, scales:{ y:{ min:0, max:1 } } } });
+
+    const sceneState = { renderer:null, scene:null, camera:null, drone:null, fullRoute:null, flown:null, riskGroup:null, buildings:null, ground:null, routePoints:[] };
+    function init3D() {
+      const host = document.getElementById('map3d');
+      if (sceneState.renderer) return;
+      if (typeof THREE === 'undefined') {
+        host.innerHTML = '<div class="three-warning">三维引擎正在加载或加载失败，请检查网络后刷新页面。二维地图和风险预测仍可使用。</div>';
+        return;
+      }
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0xdce8ef);
+      const camera = new THREE.PerspectiveCamera(50, host.clientWidth / host.clientHeight, 1, 6000);
+      camera.position.set(0, 900, 1150);
+      camera.lookAt(0, 0, 0);
+      const renderer = new THREE.WebGLRenderer({ antialias:true });
+      renderer.setSize(host.clientWidth, host.clientHeight);
+      host.appendChild(renderer.domElement);
+      const hemi = new THREE.HemisphereLight(0xffffff, 0x78909c, 1.7);
+      scene.add(hemi);
+      const dir = new THREE.DirectionalLight(0xffffff, 1.2);
+      dir.position.set(500, 900, 600);
+      scene.add(dir);
+      const ground = new THREE.Mesh(new THREE.PlaneGeometry(2200, 2200, 40, 40), makeMapGroundMaterial());
+      ground.rotation.x = -Math.PI / 2;
+      scene.add(ground);
+      sceneState.ground = ground;
+      const grid = new THREE.GridHelper(2200, 28, 0x78909c, 0x9fb3c8);
+      scene.add(grid);
+      sceneState.riskGroup = new THREE.Group();
+      sceneState.buildings = new THREE.Group();
+      scene.add(sceneState.riskGroup, sceneState.buildings);
+      sceneState.drone = makeDrone3D();
+      scene.add(sceneState.drone);
+      Object.assign(sceneState, { renderer, scene, camera });
+      window.addEventListener('resize', resize3D);
+      animate3D();
+    }
+    function resize3D() {
+      if (!sceneState.renderer) return;
+      const host = document.getElementById('map3d');
+      sceneState.camera.aspect = host.clientWidth / host.clientHeight;
+      sceneState.camera.updateProjectionMatrix();
+      sceneState.renderer.setSize(host.clientWidth, host.clientHeight);
+    }
+    function makeDrone3D() {
+      const g = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.BoxGeometry(42, 12, 42), new THREE.MeshLambertMaterial({ color:0x0d47a1 }));
+      g.add(body);
+      [[-34,0,-34],[34,0,-34],[-34,0,34],[34,0,34]].forEach(p => {
+        const rotor = new THREE.Mesh(new THREE.CylinderGeometry(16,16,4,24), new THREE.MeshLambertMaterial({ color:0xffffff }));
+        rotor.position.set(p[0], 0, p[2]);
+        g.add(rotor);
+      });
+      const nose = new THREE.Mesh(new THREE.ConeGeometry(10, 28, 20), new THREE.MeshLambertMaterial({ color:0xffb300 }));
+      nose.position.set(0, 0, -34);
+      nose.rotation.x = Math.PI / 2;
+      g.add(nose);
+      g.scale.set(.7, .7, .7);
+      return g;
+    }
+    function animate3D() {
+      requestAnimationFrame(animate3D);
+      if (sceneState.drone) sceneState.drone.children.forEach((m, i) => { if (i > 0 && i < 5) m.rotation.y += .22; });
+      if (sceneState.renderer) sceneState.renderer.render(sceneState.scene, sceneState.camera);
+    }
+    function clearGroup(group) { while (group.children.length) group.remove(group.children[0]); }
+    function lonLatToTile(lon, lat, zoom) {
+      const latRad = lat * Math.PI / 180;
+      const n = Math.pow(2, zoom);
+      const x = Math.floor((lon + 180) / 360 * n);
+      const y = Math.floor((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * n);
+      return { x, y, z: zoom };
+    }
+    function makeMapGroundMaterial() {
+      const material = new THREE.MeshLambertMaterial({ color:0xd5e2d8, side:THREE.DoubleSide });
+      if (!trajectory.length || typeof THREE === 'undefined') return material;
+      const center = trajectory[Math.floor(trajectory.length / 2)];
+      const tile = lonLatToTile(center.lon, center.lat, 14);
+      const provider = document.getElementById('mapProvider')?.value || 'osm';
+      const tk = TIANDITU_KEY;
+      let tileUrl = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${tile.z}/${tile.y}/${tile.x}`;
+      if (provider === 'osm') tileUrl = `https://tile.openstreetmap.org/${tile.z}/${tile.x}/${tile.y}.png`;
+      if (provider === 'tianditu_img' && tk) tileUrl = tiandituWmts('img', tile);
+      if (provider === 'tianditu_vec' && tk) tileUrl = tiandituWmts('vec', tile);
+      const loader = new THREE.TextureLoader();
+      loader.setCrossOrigin('anonymous');
+      loader.load(
+        tileUrl,
+        texture => {
+          texture.colorSpace = THREE.SRGBColorSpace;
+          material.map = texture;
+          material.color.set(0xffffff);
+          material.needsUpdate = true;
+        },
+        undefined,
+        () => {
+          material.color.set(0xcfe0d4);
+          material.needsUpdate = true;
+        }
+      );
+      return material;
+    }
+    function toXYZ(p) {
+      const center = trajectory[Math.floor(trajectory.length / 2)];
+      const x = (p.lon - center.lon) * 92000 * Math.cos(center.lat * Math.PI / 180);
+      const z = -(p.lat - center.lat) * 111000;
+      const y = Number(p.altitude || 90) * 2.2;
+      return new THREE.Vector3(x, y, z);
+    }
+    function refresh3D() {
+      init3D();
+      if (!sceneState.renderer) return;
+      clearGroup(sceneState.buildings);
+      clearGroup(sceneState.riskGroup);
+      if (sceneState.fullRoute) sceneState.scene.remove(sceneState.fullRoute);
+      if (sceneState.flown) sceneState.scene.remove(sceneState.flown);
+      if (sceneState.ground) {
+        sceneState.ground.material.dispose();
+        sceneState.ground.material = makeMapGroundMaterial();
+      }
+      sceneState.routePoints = trajectory.map(toXYZ);
+      sceneState.fullRoute = new THREE.Line(new THREE.BufferGeometry().setFromPoints(sceneState.routePoints), new THREE.LineBasicMaterial({ color:0x1565c0, transparent:true, opacity:.42 }));
+      sceneState.scene.add(sceneState.fullRoute);
+      sceneState.flown = new THREE.Line(new THREE.BufferGeometry().setFromPoints([sceneState.routePoints[0]]), new THREE.LineBasicMaterial({ color:0x0d47a1 }));
+      sceneState.scene.add(sceneState.flown);
+      const river = new THREE.Mesh(
+        new THREE.PlaneGeometry(2200, 170),
+        new THREE.MeshLambertMaterial({ color:0x6bb6d6, transparent:true, opacity:.38, side:THREE.DoubleSide })
+      );
+      river.rotation.x = -Math.PI / 2;
+      river.rotation.z = .22;
+      river.position.y = 1.5;
+      sceneState.buildings.add(river);
+      const colors = { '核心商务区':0x7b8794, '交通枢纽区':0x8d6e63, '医院学校敏感区':0xd84315, '居住区':0x4caf50, '工业园区':0x607d8b, '滨水/跨江区':0x039be5 };
+      trajectory.filter((p, i) => i % 18 === 0).forEach((p, i) => {
+        const pos = toXYZ(p);
+        const h = 35 + 190 * p.social + (p.zone.includes('核心') ? 90 : 0);
+        const box = new THREE.Mesh(
+          new THREE.BoxGeometry(34 + (i % 3) * 8, h, 34 + (i % 4) * 7),
+          new THREE.MeshLambertMaterial({ color: colors[p.zone] || 0x90a4ae, transparent:true, opacity:.58 })
+        );
+        box.position.set(pos.x + ((i % 5) - 2) * 52, h / 2, pos.z + ((i % 7) - 3) * 42);
+        sceneState.buildings.add(box);
+      });
+      if (noFlyEnabled()) {
+        const center = trajectory[Math.floor(trajectory.length / 2)];
+        noFlyZones.forEach(zone => {
+          const zonePos = {
+            lon: zone.lon,
+            lat: zone.lat,
+            altitude: 2,
+          };
+          const pos = toXYZ(zonePos);
+          if (Math.abs(pos.x) > 1350 || Math.abs(pos.z) > 1350) return;
+          const radius = Math.max(36, Math.min(260, zone.radius / 18));
+          const mat = new THREE.MeshBasicMaterial({ color:0xb71c1c, transparent:true, opacity:.16, side:THREE.DoubleSide });
+          const disc = new THREE.Mesh(new THREE.CircleGeometry(radius, 64), mat);
+          disc.rotation.x = -Math.PI / 2;
+          disc.position.set(pos.x, 4, pos.z);
+          sceneState.riskGroup.add(disc);
+          const ring = new THREE.Mesh(
+            new THREE.TorusGeometry(radius, 2.8, 8, 96),
+            new THREE.MeshBasicMaterial({ color:0xb71c1c })
+          );
+          ring.rotation.x = Math.PI / 2;
+          ring.position.set(pos.x, 9, pos.z);
+          sceneState.riskGroup.add(ring);
+        });
+      }
+      trajectory.filter(p => p.ai >= .4).filter((p, i) => i % 9 === 0).forEach(p => {
+        const pos = toXYZ(p);
+        const color = new THREE.Color(levelColors[p.level] || '#607d8b');
+        const marker = new THREE.Mesh(new THREE.SphereGeometry(9, 18, 18), new THREE.MeshBasicMaterial({ color }));
+        marker.position.copy(pos);
+        marker.position.y += 16;
+        sceneState.riskGroup.add(marker);
+      });
+      update3D(0);
+    }
+    function update3D(i) {
+      if (!trajectory.length || !sceneState.drone || !sceneState.routePoints.length) return;
+      const pos = sceneState.routePoints[i];
+      sceneState.drone.position.copy(pos);
+      sceneState.drone.rotation.y = trajectory[i].heading * Math.PI / 180;
+      sceneState.flown.geometry.dispose();
+      sceneState.flown.geometry = new THREE.BufferGeometry().setFromPoints(sceneState.routePoints.slice(0, i + 1));
+      const cam = sceneState.camera;
+      cam.position.lerp(new THREE.Vector3(pos.x + 520, pos.y + 650, pos.z + 820), .05);
+      cam.lookAt(pos);
+    }
+
+    function initPlaceSelect(id, selected) {
+      const select = document.getElementById(id);
+      Object.keys(places).forEach(name => {
+        const option = document.createElement('option');
+        option.value = name; option.textContent = name;
+        if (name === selected) option.selected = true;
+        select.appendChild(option);
+      });
+    }
+    function applyPlace(prefix, name) {
+      document.getElementById(prefix + 'Lon').value = places[name][0];
+      document.getElementById(prefix + 'Lat').value = places[name][1];
+    }
+    function findLocalPlace(query) {
+      const normalized = query.replace(/\s+/g, '').toLowerCase();
+      if (places[query]) return { name:query, value:places[query] };
+      for (const [name, value] of Object.entries(places)) {
+        const key = name.replace(/\s+/g, '').toLowerCase();
+        if (key.includes(normalized) || normalized.includes(key)) return { name, value };
+      }
+      return null;
+    }
+    function jsonp(url) {
+      return new Promise((resolve, reject) => {
+        const callbackName = `jsonp_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+        const script = document.createElement('script');
+        const separator = url.includes('?') ? '&' : '?';
+        script.src = `${url}${separator}callback=${callbackName}`;
+        script.onerror = () => {
+          delete window[callbackName];
+          script.remove();
+          reject(new Error('jsonp_failed'));
+        };
+        window[callbackName] = data => {
+          delete window[callbackName];
+          script.remove();
+          resolve(data);
+        };
+        document.body.appendChild(script);
+      });
+    }
+    function outOfChina(lon, lat) {
+      return lon < 72.004 || lon > 137.8347 || lat < 0.8293 || lat > 55.8271;
+    }
+    function transformLat(x, y) {
+      let ret = -100 + 2 * x + 3 * y + .2 * y * y + .1 * x * y + .2 * Math.sqrt(Math.abs(x));
+      ret += (20 * Math.sin(6 * x * Math.PI) + 20 * Math.sin(2 * x * Math.PI)) * 2 / 3;
+      ret += (20 * Math.sin(y * Math.PI) + 40 * Math.sin(y / 3 * Math.PI)) * 2 / 3;
+      ret += (160 * Math.sin(y / 12 * Math.PI) + 320 * Math.sin(y * Math.PI / 30)) * 2 / 3;
+      return ret;
+    }
+    function transformLon(x, y) {
+      let ret = 300 + x + 2 * y + .1 * x * x + .1 * x * y + .1 * Math.sqrt(Math.abs(x));
+      ret += (20 * Math.sin(6 * x * Math.PI) + 20 * Math.sin(2 * x * Math.PI)) * 2 / 3;
+      ret += (20 * Math.sin(x * Math.PI) + 40 * Math.sin(x / 3 * Math.PI)) * 2 / 3;
+      ret += (150 * Math.sin(x / 12 * Math.PI) + 300 * Math.sin(x / 30 * Math.PI)) * 2 / 3;
+      return ret;
+    }
+    function gcj02ToWgs84(lon, lat) {
+      if (outOfChina(lon, lat)) return { lon, lat };
+      const a = 6378245.0;
+      const ee = 0.00669342162296594323;
+      let dLat = transformLat(lon - 105.0, lat - 35.0);
+      let dLon = transformLon(lon - 105.0, lat - 35.0);
+      const radLat = lat / 180.0 * Math.PI;
+      let magic = Math.sin(radLat);
+      magic = 1 - ee * magic * magic;
+      const sqrtMagic = Math.sqrt(magic);
+      dLat = (dLat * 180.0) / ((a * (1 - ee)) / (magic * sqrtMagic) * Math.PI);
+      dLon = (dLon * 180.0) / (a / sqrtMagic * Math.cos(radLat) * Math.PI);
+      const mgLat = lat + dLat;
+      const mgLon = lon + dLon;
+      return { lon: lon * 2 - mgLon, lat: lat * 2 - mgLat };
+    }
+    function bd09ToGcj02(lon, lat) {
+      const x = lon - 0.0065;
+      const y = lat - 0.006;
+      const z = Math.sqrt(x * x + y * y) - 0.00002 * Math.sin(y * Math.PI * 3000.0 / 180.0);
+      const theta = Math.atan2(y, x) - 0.000003 * Math.cos(x * Math.PI * 3000.0 / 180.0);
+      return { lon: z * Math.cos(theta), lat: z * Math.sin(theta) };
+    }
+    async function fetchAmapPlace(query, city) {
+      const key = AMAP_WEB_SERVICE_KEY;
+      if (!key) return null;
+      const cityText = city || '';
+      const requests = [
+        {
+          url: `https://restapi.amap.com/v3/place/text?key=${encodeURIComponent(key)}&keywords=${encodeURIComponent(query)}&city=${encodeURIComponent(cityText)}&citylimit=false&offset=10&page=1&extensions=base&output=json`,
+          parse: data => {
+            if (data.status === '1' && data.pois && data.pois.length) {
+              const item = data.pois.find(p => typeof p.location === 'string' && p.location.includes(',')) || data.pois[0];
+              if (!item.location || !item.location.includes(',')) return null;
+              const [gcjLon, gcjLat] = item.location.split(',').map(Number);
+              const wgs = gcj02ToWgs84(gcjLon, gcjLat);
+              return { name: item.name || query, lon: wgs.lon, lat: wgs.lat, source: '高德地图POI检索' };
+            }
+            return null;
+          }
+        },
+        {
+          url: `https://restapi.amap.com/v3/assistant/inputtips?key=${encodeURIComponent(key)}&keywords=${encodeURIComponent(query)}&city=${encodeURIComponent(cityText)}&citylimit=false&datatype=poi&output=json`,
+          parse: data => {
+            if (data.status === '1' && data.tips && data.tips.length) {
+              const item = data.tips.find(t => typeof t.location === 'string' && t.location.includes(',')) || data.tips[0];
+              if (!item.location || !item.location.includes(',')) return null;
+              const [gcjLon, gcjLat] = item.location.split(',').map(Number);
+              const wgs = gcj02ToWgs84(gcjLon, gcjLat);
+              return { name: item.name || query, lon: wgs.lon, lat: wgs.lat, source: '高德地图输入提示' };
+            }
+            return null;
+          }
+        },
+        {
+          url: `https://restapi.amap.com/v3/geocode/geo?key=${encodeURIComponent(key)}&address=${encodeURIComponent(query)}&city=${encodeURIComponent(cityText)}&output=json`,
+          parse: data => {
+            if (data.status === '1' && data.geocodes && data.geocodes.length) {
+              const item = data.geocodes[0];
+              const [gcjLon, gcjLat] = item.location.split(',').map(Number);
+              const wgs = gcj02ToWgs84(gcjLon, gcjLat);
+              return { name: item.formatted_address || query, lon: wgs.lon, lat: wgs.lat, source: '高德地图地址解析' };
+            }
+            return null;
+          }
+        }
+      ];
+      for (const req of requests) {
+        try {
+          const data = await jsonp(req.url);
+          const result = req.parse(data);
+          if (result && Number.isFinite(result.lon) && Number.isFinite(result.lat)) return result;
+        } catch (err) {}
+      }
+      return null;
+    }
+    async function fetchBaiduPlace(query, city) {
+      const ak = BAIDU_AK;
+      if (!ak) return null;
+      const url = `https://api.map.baidu.com/geocoding/v3/?ak=${encodeURIComponent(ak)}&address=${encodeURIComponent(query)}&city=${encodeURIComponent(city || '')}&output=json`;
+      try {
+        const data = await jsonp(url);
+        if (data.status === 0 && data.result && data.result.location) {
+          const bd = data.result.location;
+          const gcj = bd09ToGcj02(Number(bd.lng), Number(bd.lat));
+          const wgs = gcj02ToWgs84(gcj.lon, gcj.lat);
+          return { name: data.result.level ? `${query}（${data.result.level}）` : query, lon: wgs.lon, lat: wgs.lat, source: '百度地图精细定位' };
+        }
+      } catch (err) {}
+      return null;
+    }
+    function parseTiandituLocation(data) {
+      const candidates = [
+        data && data.location,
+        data && data.result && data.result.location,
+        data && data.result && data.result[0] && data.result[0].location,
+      ].filter(Boolean);
+      for (const loc of candidates) {
+        if (typeof loc === 'string') {
+          const parts = loc.split(',').map(Number);
+          if (parts.length >= 2 && Number.isFinite(parts[0]) && Number.isFinite(parts[1])) return { lon: parts[0], lat: parts[1] };
+        }
+        const lon = Number(loc.lon ?? loc.lng ?? loc.longitude);
+        const lat = Number(loc.lat ?? loc.latitude);
+        if (Number.isFinite(lon) && Number.isFinite(lat)) return { lon, lat };
+      }
+      const lonlat = data && data.lonlat;
+      if (typeof lonlat === 'string') {
+        const parts = lonlat.split(',').map(Number);
+        if (parts.length >= 2 && Number.isFinite(parts[0]) && Number.isFinite(parts[1])) return { lon: parts[0], lat: parts[1] };
+      }
+      return null;
+    }
+    async function fetchTiandituPlace(query, city) {
+      const key = TIANDITU_KEY;
+      if (!key) return null;
+      const keyword = city ? `${city} ${query}` : query;
+      const ds = JSON.stringify({ keyWord: keyword });
+      const baseUrl = `https://api.tianditu.gov.cn/geocoder?ds=${encodeURIComponent(ds)}&tk=${encodeURIComponent(key)}`;
+      try {
+        let data = null;
+        try {
+          const response = await fetch(baseUrl);
+          data = await response.json();
+        } catch (err) {
+          data = await jsonp(baseUrl);
+        }
+        const loc = parseTiandituLocation(data);
+        if (loc && Number.isFinite(loc.lon) && Number.isFinite(loc.lat)) {
+          return { name: data.formatted_address || data.address || keyword, lon: loc.lon, lat: loc.lat, source: '天地图精细定位' };
+        }
+      } catch (err) {}
+      return null;
+    }
+    async function fetchNominatimPlace(query) {
+      const queries = [
+        `${document.getElementById('cityHint').value} ${query}, 中国`,
+        `${query}, 中国`,
+        query,
+      ];
+      for (const q of queries) {
+        const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=cn&accept-language=zh-CN&q=${encodeURIComponent(q)}`;
+        try {
+          const response = await fetch(url, { headers: { 'Accept': 'application/json' } });
+          const data = await response.json();
+          if (Array.isArray(data) && data.length) {
+            return {
+              name: data[0].display_name || query,
+              lon: Number(data[0].lon),
+              lat: Number(data[0].lat),
+              source: 'OpenStreetMap/Nominatim',
+            };
+          }
+        } catch (err) {}
+      }
+      return null;
+    }
+    async function fetchOpenMeteoPlace(query) {
+      const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=1&language=zh&format=json`;
+      try {
+        const response = await fetch(url);
+        const data = await response.json();
+        if (data.results && data.results.length) {
+          const item = data.results[0];
+          return {
+            name: item.name || query,
+            lon: Number(item.longitude),
+            lat: Number(item.latitude),
+            source: 'Open-Meteo/Geocoding',
+          };
+        }
+      } catch (err) {}
+      return null;
+    }
+    async function locatePlace(query) {
+      const city = document.getElementById('cityHint').value.trim();
+      const local = findLocalPlace(query);
+      if (local) return { name: local.name, lon: local.value[0], lat: local.value[1], zone: local.value[2], source: '本地地点库' };
+      const remote = await fetchAmapPlace(query, city) || await fetchTiandituPlace(query, city) || await fetchNominatimPlace(query) || await fetchOpenMeteoPlace(query);
+      if (remote && Number.isFinite(remote.lon) && Number.isFinite(remote.lat)) {
+        return { ...remote, zone: nearestZone(remote.lon, remote.lat) };
+      }
+      return null;
+    }
+    function parseMultiTasks() {
+      return document.getElementById('multiTasks').value
+        .split(/\n+/)
+        .map(line => line.trim())
+        .filter(Boolean)
+        .map(line => {
+          const parts = line.split(/\s*(?:->|→|到|至|=>|,|，)\s*/).filter(Boolean);
+          if (parts.length < 2) return null;
+          return { startName: parts[0], endName: parts.slice(1).join('') };
+        })
+        .filter(Boolean)
+        .slice(0, 8);
+    }
+    async function searchPlace(prefix) {
+      const input = document.getElementById(prefix + 'Search');
+      const query = input.value.trim();
+      if (!query) return;
+      agentText.textContent = `正在定位${prefix === 'start' ? '起点' : '终点'}：${query}...`;
+      const provider = 'amap';
+      const city = document.getElementById('cityHint').value.trim();
+      let remote = null;
+      if (provider === 'tianditu') {
+        remote = await fetchTiandituPlace(query, city) || await fetchAmapPlace(query, city) || await fetchBaiduPlace(query, city) || await fetchNominatimPlace(query) || await fetchOpenMeteoPlace(query);
+      } else if (provider === 'amap') {
+        remote = await fetchAmapPlace(query, city) || await fetchBaiduPlace(query, city) || await fetchTiandituPlace(query, city) || await fetchNominatimPlace(query) || await fetchOpenMeteoPlace(query);
+      } else if (provider === 'baidu') {
+        remote = await fetchBaiduPlace(query, city) || await fetchAmapPlace(query, city) || await fetchTiandituPlace(query, city) || await fetchNominatimPlace(query) || await fetchOpenMeteoPlace(query);
+      }
+      if (remote && Number.isFinite(remote.lon) && Number.isFinite(remote.lat)) {
+        document.getElementById(prefix + 'Lon').value = remote.lon.toFixed(6);
+        document.getElementById(prefix + 'Lat').value = remote.lat.toFixed(6);
+        input.value = query;
+        agentText.textContent = `已通过${remote.source}定位：${remote.name}`;
+        await fetchWeather();
+        await generateTrajectory();
+        return;
+      }
+      const local = findLocalPlace(query);
+      if (local) {
+        document.getElementById(prefix + 'Lon').value = local.value[0];
+        document.getElementById(prefix + 'Lat').value = local.value[1];
+        input.value = local.name;
+        agentText.textContent = `已使用本地地点库定位：${local.name}`;
+        await fetchWeather();
+        await generateTrajectory();
+        return;
+      }
+      if (provider === 'osm') {
+        remote = await fetchNominatimPlace(query) || await fetchOpenMeteoPlace(query) || await fetchTiandituPlace(query, city) || await fetchAmapPlace(query, city) || await fetchBaiduPlace(query, city);
+      } else {
+        remote = await fetchTiandituPlace(query, city) || await fetchAmapPlace(query, city) || await fetchBaiduPlace(query, city) || await fetchNominatimPlace(query) || await fetchOpenMeteoPlace(query);
+      }
+      if (remote && Number.isFinite(remote.lon) && Number.isFinite(remote.lat)) {
+        document.getElementById(prefix + 'Lon').value = remote.lon.toFixed(6);
+        document.getElementById(prefix + 'Lat').value = remote.lat.toFixed(6);
+        input.value = query;
+        agentText.textContent = `已通过${remote.source}定位：${remote.name}`;
+        await fetchWeather();
+        await generateTrajectory();
+      } else {
+        agentText.textContent = `没有定位到“${query}”。可尝试加上城市名，例如“上海 同济大学”或“北京 协和医院”，也可以手动输入经纬度。`;
+      }
+    }
+    function weatherCodeText(code) {
+      const table = {0:'晴',1:'大部晴朗',2:'局部多云',3:'阴',45:'雾',48:'雾凇',51:'小毛毛雨',53:'毛毛雨',55:'强毛毛雨',61:'小雨',63:'中雨',65:'大雨',80:'阵雨',81:'中等阵雨',82:'强阵雨',95:'雷暴'};
+      return table[code] || `天气代码${code}`;
+    }
+    function calcWeatherRisk(wind, gust, precipitation, humidity, cloud) {
+      return Math.min(1, .38 * Math.min(wind / 12, 1) + .25 * Math.min(gust / 16, 1) + .2 * Math.min(precipitation / 8, 1) + .1 * Math.min(Math.max(humidity - 70, 0) / 30, 1) + .07 * Math.min(cloud / 100, 1));
+    }
+    async function fetchWeather() {
+      const slon = Number(startLon.value), slat = Number(startLat.value), elon = Number(endLon.value), elat = Number(endLat.value);
+      const lat = (slat + elat) / 2, lon = (slon + elon) / 2;
+      weatherText.textContent = '天气：正在获取起终点中点实时天气...';
+      const currentFields = 'temperature_2m,apparent_temperature,relative_humidity_2m,cloud_cover,surface_pressure,precipitation,rain,showers,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m';
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=${currentFields}&wind_speed_unit=ms&timezone=Asia%2FShanghai`;
+      try {
+        const response = await fetch(url);
+        const data = await response.json();
+        const c = data.current;
+        const windValue = Number(c.wind_speed_10m || 4);
+        const gustValue = Number(c.wind_gusts_10m || windValue);
+        const precipitation = Number(c.precipitation || 0);
+        const humidity = Number(c.relative_humidity_2m || 60);
+        const cloud = Number(c.cloud_cover || 40);
+        currentWeather = {
+          source: 'Open-Meteo实时天气',
+          time: c.time,
+          summary: weatherCodeText(Number(c.weather_code || 0)),
+          temperature: Number(c.temperature_2m || 28),
+          apparent: Number(c.apparent_temperature || c.temperature_2m || 28),
+          humidity,
+          pressure: Number(c.surface_pressure || 1013),
+          precipitation,
+          wind: windValue,
+          gust: gustValue,
+          direction: Number(c.wind_direction_10m || 0),
+          weatherRisk: calcWeatherRisk(windValue, gustValue, precipitation, humidity, cloud),
+        };
+        wind.value = windValue.toFixed(1);
+        weatherText.innerHTML = `天气：${currentWeather.source}｜${currentWeather.time || ''}｜${currentWeather.summary}，气温 ${currentWeather.temperature.toFixed(1)}℃，体感 ${currentWeather.apparent.toFixed(1)}℃，湿度 ${humidity.toFixed(0)}%，降水 ${precipitation.toFixed(1)}mm，风速 ${windValue.toFixed(1)}m/s，阵风 ${gustValue.toFixed(1)}m/s，风向 ${currentWeather.direction.toFixed(0)}°`;
+      } catch (err) {
+        currentWeather = { source:'天气接口回退', summary:'无法获取实时天气', temperature:28, humidity:60, precipitation:0, wind:Number(wind.value || 4), gust:Number(wind.value || 4) + 2, direction:0, weatherRisk:.18 };
+        weatherText.textContent = '天气：实时天气获取失败，已使用页面中的手动风速参数。';
+      }
+    }
+    function haversine(lon1, lat1, lon2, lat2) {
+      const R = 6371000, toRad = d => d * Math.PI / 180;
+      const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
+      const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+      return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+    function level(score) { if (score >= .80) return '红色'; if (score >= .60) return '橙色'; if (score >= .40) return '黄色'; if (score >= .20) return '蓝色'; return '正常'; }
+    function chooseRouteMode(distance, weatherRiskValue, droneCount, startZone, endZone, selectedStrategy, noFlyRouteRisk=0) {
+      if (selectedStrategy === 'direct') return { name:'最短直飞航线', code:'direct', factor:1.00, bend:0, altitudeBase:90 };
+      if (selectedStrategy === 'corridor') return { name:'安全走廊航线', code:'corridor', factor:1.16, bend:.018, altitudeBase:105 };
+      if (selectedStrategy === 'detour') return { name:'绕行避险航线', code:'detour', factor:1.24, bend:.026, altitudeBase:110 };
+      const sensitive = startZone.includes('医院') || endZone.includes('医院');
+      const water = startZone.includes('滨水') || endZone.includes('滨水');
+      if (noFlyRouteRisk >= .45) return { name:'绕行避险航线', code:'detour', factor:1.28, bend:.034, altitudeBase:112 };
+      if (sensitive || weatherRiskValue >= .42 || droneCount >= 10) return { name:'安全走廊航线', code:'corridor', factor:1.16, bend:.018, altitudeBase:105 };
+      if (distance >= 9000 || water) return { name:'绕行避险航线', code:'detour', factor:1.24, bend:.026, altitudeBase:110 };
+      return { name:'自动直飞航线', code:'direct', factor:1.04, bend:.010, altitudeBase:90 };
+    }
+    async function fetchRealRoute(slon, slat, elon, elat, routeModeInfo, selectedStrategy) {
+      if (selectedStrategy === 'direct') return null;
+      const url = `https://router.project-osrm.org/route/v1/driving/${slon},${slat};${elon},${elat}?overview=full&geometries=geojson&alternatives=false`;
+      try {
+        const response = await fetch(url);
+        const data = await response.json();
+        if (!data.routes || !data.routes.length) return null;
+        const coords = data.routes[0].geometry.coordinates;
+        const points = coords.map(item => ({ lon: Number(item[0]), lat: Number(item[1]) }));
+        if (routeModeInfo.name.includes('安全') || routeModeInfo.name.includes('绕行')) {
+          const shift = routeModeInfo.name.includes('绕行') ? 0.0022 : 0.0012;
+          return points.map((p, idx) => {
+            const r = idx / Math.max(points.length - 1, 1);
+            return {
+              lon: p.lon + Math.sin(Math.PI * r) * shift * Math.sin((slat + elat) * 9),
+              lat: p.lat + Math.sin(Math.PI * r) * shift * Math.cos((slon + elon) * 9),
+            };
+          });
+        }
+        return points;
+      } catch (err) {
+        return null;
+      }
+    }
+    function buildFallbackRoute(slon, slat, elon, elat, routeModeInfo, steps) {
+      const points = [];
+      for (let i = 0; i < steps; i++) {
+        const r = i / Math.max(steps - 1, 1);
+        const bend = Math.sin(Math.PI * r) * routeModeInfo.bend;
+        points.push({
+          lat: slat + (elat - slat) * r + bend * Math.cos((slon + elon) * 8),
+          lon: slon + (elon - slon) * r + bend * Math.sin((slat + elat) * 8),
+        });
+      }
+      return points;
+    }
+    function routeLength(points) {
+      let total = 0;
+      for (let i = 1; i < points.length; i++) total += haversine(points[i - 1].lon, points[i - 1].lat, points[i].lon, points[i].lat);
+      return total;
+    }
+    function interpolateRoute(points, steps) {
+      if (points.length <= 1) return points;
+      const distances = [0];
+      for (let i = 1; i < points.length; i++) distances.push(distances[i - 1] + haversine(points[i - 1].lon, points[i - 1].lat, points[i].lon, points[i].lat));
+      const total = distances[distances.length - 1] || 1;
+      const result = [];
+      for (let s = 0; s < steps; s++) {
+        const target = total * s / Math.max(steps - 1, 1);
+        let j = 1;
+        while (j < distances.length - 1 && distances[j] < target) j += 1;
+        const prevD = distances[j - 1], nextD = distances[j];
+        const ratio = (target - prevD) / Math.max(nextD - prevD, 1e-6);
+        result.push({
+          lon: points[j - 1].lon + (points[j].lon - points[j - 1].lon) * ratio,
+          lat: points[j - 1].lat + (points[j].lat - points[j - 1].lat) * ratio,
+        });
+      }
+      return result;
+    }
+    function dynamicAltitude(routeMode, zone, r, environment, compliance, airspace) {
+      let altitude = routeMode.altitudeBase;
+      if (zone.includes('核心') || zone.includes('交通')) altitude += 12;
+      if (zone.includes('医院') || zone.includes('学校')) altitude += 18;
+      if (zone.includes('滨水')) altitude += 10;
+      if (environment >= .45) altitude += 10;
+      if (compliance >= .40) altitude += 12;
+      if (airspace >= .45 && r > .15 && r < .85) altitude += 8;
+      altitude += Math.sin(Math.PI * r) * 8;
+      return Math.max(60, Math.min(140, altitude));
+    }
+    function nearestZone(lon, lat) {
+      let best = '综合城市区域', bestD = Infinity;
+      Object.entries(places).forEach(([name, p]) => {
+        const d = (p[0] - lon) ** 2 + (p[1] - lat) ** 2;
+        if (d < bestD) { bestD = d; best = p[2]; }
+      });
+      return best;
+    }
+    async function predictWithLocalXgboost(points, params) {
+      try {
+        const apiBase = window.location.protocol === 'file:' ? 'http://127.0.0.1:8765' : window.location.origin;
+        const response = await fetch(`${apiBase}/predict`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ points, params }),
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        if (!data.ok || !Array.isArray(data.predictions) || data.predictions.length !== points.length) {
+          throw new Error(data.error || '模型返回数据不完整');
+        }
+        return data;
+      } catch (err) {
+        console.warn('XGBoost model API unavailable, using browser fallback.', err);
+        return null;
+      }
+    }
+    async function buildPredictedRoute(selectedStrategy, context, taskLabel='') {
+      const { slon, slat, elon, elat, speed, payloadRate, droneCount, windValue, gps, initialSoc, soh, healthBaseRisk, weatherRiskValue, distance, startZone, endZone, midZone } = context;
+      const directCheck = buildFallbackRoute(slon, slat, elon, elat, { bend:0 }, 80);
+      const directNoFly = assessNoFlyRoute(directCheck);
+      const routeModeInfo = chooseRouteMode(distance, weatherRiskValue, droneCount, startZone, endZone, selectedStrategy, directNoFly.maxScore);
+      let baseRoute = await fetchRealRoute(slon, slat, elon, elat, routeModeInfo, selectedStrategy);
+      if (!baseRoute || baseRoute.length < 2) baseRoute = buildFallbackRoute(slon, slat, elon, elat, routeModeInfo, 180);
+      const routeNoFly = assessNoFlyRoute(baseRoute);
+      const realRouteDistance = routeLength(baseRoute);
+      const plannedDistance = selectedStrategy === 'direct' ? distance * routeModeInfo.factor : realRouteDistance;
+      const duration = Math.max(90, Math.round(plannedDistance / Math.max(speed, 1) + 80));
+      const steps = Math.min(900, Math.max(140, Math.round(duration / 2)));
+      const pathPoints = interpolateRoute(baseRoute, steps);
+      const route = [];
+      for (let i = 0; i < steps; i++) {
+        const r = i / (steps - 1);
+        const lat = pathPoints[i].lat;
+        const lon = pathPoints[i].lon;
+        const progress = Math.sin(Math.PI * r), zone = nearestZone(lon, lat);
+        const sensitive = zone.includes('医院') ? .62 : zone.includes('交通') ? .42 : zone.includes('核心') ? .36 : .22;
+        const social = Math.min(1, .16 + sensitive * .5 + (zone.includes('核心') ? .2 : 0) + (zone.includes('居住') ? .16 : 0));
+        const airspace = Math.min(1, .08 + droneCount / 24 + progress * .12);
+        const environment = Math.min(1, .06 + weatherRiskValue * .62 + windValue / 30 + gps / 50 + (zone.includes('滨水') ? .12 : 0));
+        const noFly = assessNoFlyPoint(lon, lat);
+        const altitude = dynamicAltitude(routeModeInfo, zone, r, environment, .25 + sensitive * .34 + noFly.score * .42, airspace);
+        const compliance = Math.min(1, .10 + sensitive * .42 + (altitude < 70 ? .13 : 0) + (zone.includes('滨水') ? .08 : 0) + noFly.score * .62 - (routeModeInfo.name.includes('安全') ? .05 : 0) - (routeModeInfo.name.includes('绕行') ? .08 : 0));
+        const mission = Math.min(1, .12 + payloadRate * .28 + distance / 18000 + (1 - r) * .04);
+        const health = Math.min(1, .08 + healthBaseRisk * .65 + payloadRate * .12 + windValue / 42 + r * .18);
+        const llsri = Math.min(1, AHP_WEIGHTS.environment * environment + AHP_WEIGHTS.health * health + AHP_WEIGHTS.mission * mission + AHP_WEIGHTS.airspace * airspace + AHP_WEIGHTS.social * social + AHP_WEIGHTS.compliance * compliance);
+        const ai = Math.min(1, llsri + progress * .08 + Math.max(0, compliance - .35) * .18 + Math.max(0, airspace - .35) * .14 + Math.max(0, health - .36) * .12 + noFly.score * .12);
+        let heading = 0;
+        if (i > 0) {
+          const prev = route[i - 1];
+          heading = (Math.atan2(lon - prev.lon, lat - prev.lat) * 180 / Math.PI + 360) % 360;
+        }
+        const noFlyText = noFly.nearest ? `; 最近禁飞区:${noFly.nearest.name}; 距离:${Math.round(noFly.distance)}m${noFly.inside ? '; 已进入禁飞区' : ''}` : '';
+        route.push({ timestamp:Math.round(r * duration), lat, lon, heading, altitude, routeMode:routeModeInfo.name, llsri, ai, social, health, environment, airspace, mission, compliance, noFlyRisk:noFly.score, noFlyZone:noFly.nearest ? noFly.nearest.name : '', noFlyInside:noFly.inside, weatherRisk:weatherRiskValue, level:level(ai), zone, reason:`${routeModeInfo.name}; 功能区:${zone}; 动态高度:${altitude.toFixed(0)}m; 天气:${currentWeather.summary}; 风速:${windValue.toFixed(1)}m/s; 合规风险:${compliance.toFixed(2)}; 健康风险:${health.toFixed(2)}${noFlyText}` });
+      }
+      const modelResult = await predictWithLocalXgboost(route, {
+        start_lon: slon,
+        start_lat: slat,
+        end_lon: elon,
+        end_lat: elat,
+        speed,
+        payload_rate: payloadRate,
+        drone_count: droneCount,
+        wind: windValue,
+        wind_direction: currentWeather.direction || 'E',
+        gust_level: (currentWeather.gust || windValue) >= 10 ? 'strong' : ((currentWeather.gust || windValue) >= 6 ? 'medium' : 'weak'),
+        gps_error: gps,
+        initial_soc: initialSoc,
+        battery_soh: soh,
+        route_distance: plannedDistance,
+        route_type: routeModeInfo.code || selectedStrategy,
+        route_complexity: routeModeInfo.name.includes('绕行') ? 'high' : (routeModeInfo.name.includes('安全') ? 'medium' : 'low'),
+        city_zone: midZone,
+        visibility: Math.max(0.35, 1 - weatherRiskValue * 0.55),
+        time_period: 'day',
+        hover_seconds: 10,
+      });
+      if (modelResult) {
+        route.forEach((point, index) => {
+          const pred = modelResult.predictions[index];
+          const modelRisk = Number(pred.ai_operation_risk);
+          point.ai = Math.min(1, Math.max(modelRisk, point.llsri + point.noFlyRisk * .16, modelRisk + point.noFlyRisk * .10));
+          point.level = pred.ai_operation_level || level(point.ai);
+          point.level = level(point.ai);
+          point.reason += `; 模型:${modelResult.model_type}`;
+        });
+      } else {
+        route.forEach(point => { point.reason += '; 模型接口未启动，使用网页内置公式估算'; });
+      }
+      return { name: taskLabel || routeModeInfo.name, routeName: routeModeInfo.name, code: routeModeInfo.code || selectedStrategy, route, distance: plannedDistance, duration, modelUsed: Boolean(modelResult), noFlySummary:routeNoFly };
+    }
+    function taskStats(result) {
+      const maxRiskValue = Math.max(...result.route.map(item => item.ai));
+      const avgRiskValue = result.route.reduce((sum, item) => sum + item.ai, 0) / Math.max(result.route.length, 1);
+      const maxPoint = result.route.reduce((best, item) => item.ai > best.ai ? item : best, result.route[0]);
+      return {
+        maxRisk: maxRiskValue,
+        avgRisk: avgRiskValue,
+        level: level(maxRiskValue),
+        durationText: `${Math.floor(result.duration / 60)}分${result.duration % 60}秒`,
+        distanceText: `${(result.distance / 1000).toFixed(2)} km`,
+        maxPoint,
+        noFlyText: result.noFlySummary && result.noFlySummary.maxScore > .05 ? `${result.noFlySummary.nearest?.name || '禁飞区'} ${result.noFlySummary.insideCount ? '穿越' : '接近'}` : '未触发',
+      };
+    }
+    function setActiveTrajectory(name, resetIndex=false) {
+      const result = trajectories[name];
+      if (!result) return;
+      activeTrajectoryName = name;
+      trajectory = result.route;
+      if (resetIndex) idx = 0;
+      renderTaskMonitor();
+      refresh2D(result.distance, result.duration, result.route[Math.floor(result.route.length / 2)]?.zone || '-');
+      refresh3D();
+      update(Math.min(idx, trajectory.length - 1));
+    }
+    function renderTaskMonitor() {
+      const names = Object.keys(trajectories);
+      const select = document.getElementById('activeTaskSelect');
+      const tableBody = document.querySelector('#taskSummaryTable tbody');
+      const legend = document.getElementById('mapTaskLegend');
+      select.innerHTML = '';
+      tableBody.innerHTML = '';
+      legend.innerHTML = '';
+      if (!names.length) {
+        select.innerHTML = '<option>暂无任务</option>';
+        tableBody.innerHTML = '<tr><td colspan="4">暂无任务</td></tr>';
+        legend.textContent = '地图任务图例将在生成后显示。';
+        return;
+      }
+      names.forEach((name, nameIndex) => {
+        const result = trajectories[name];
+        const stats = taskStats(result);
+        const color = taskColors[nameIndex % taskColors.length];
+        const option = document.createElement('option');
+        option.value = name;
+        option.textContent = `${name}｜${stats.level}｜最高风险 ${stats.maxRisk.toFixed(3)}`;
+        option.selected = name === activeTrajectoryName;
+        select.appendChild(option);
+
+        const row = document.createElement('tr');
+        row.className = name === activeTrajectoryName ? 'active' : '';
+        row.innerHTML = `<td>${name}<br><span class="small">禁飞区：${stats.noFlyText}</span></td><td>${stats.maxRisk.toFixed(3)}</td><td style="color:${levelColors[stats.level] || '#263238'}">${stats.level}</td><td>${stats.durationText}</td>`;
+        row.addEventListener('click', () => setActiveTrajectory(name, true));
+        tableBody.appendChild(row);
+
+        const legendRow = document.createElement('div');
+        legendRow.className = `legend-row ${name === activeTrajectoryName ? 'active' : ''}`;
+        legendRow.innerHTML = `<span class="legend-dot" style="background:${color}"></span><span>${name}<br>${stats.distanceText}｜${stats.durationText}｜禁飞区:${stats.noFlyText}</span><b style="color:${levelColors[stats.level] || '#263238'}">${stats.maxRisk.toFixed(3)}</b>`;
+        legendRow.addEventListener('click', () => setActiveTrajectory(name, true));
+        legend.appendChild(legendRow);
+      });
+    }
+    async function generateTrajectory() {
+      stopFlight();
+      agentText.textContent = '正在接入真实路线并计算飞行风险...';
+      const slon = Number(startLon.value), slat = Number(startLat.value), elon = Number(endLon.value), elat = Number(endLat.value);
+      const speed = Number(speedMs.value), payloadRate = Number(document.getElementById('payload').value), droneCount = Number(document.getElementById('droneCount').value), windValue = Number(document.getElementById('wind').value), gps = Number(document.getElementById('gps').value);
+      const initialSoc = Number(document.getElementById('batterySoc').value);
+      const soh = Number(document.getElementById('batterySoh').value);
+      const motor = Number(document.getElementById('motorHealth').value);
+      const link = Number(document.getElementById('linkQuality').value);
+      const healthBaseRisk = Math.min(1, .34 * (1 - initialSoc) + .28 * (1 - soh) + .24 * (1 - motor) + .14 * (1 - link));
+      const weatherRiskValue = Math.max(currentWeather.weatherRisk || 0, calcWeatherRisk(windValue, currentWeather.gust || windValue + 2, currentWeather.precipitation || 0, currentWeather.humidity || 60, 40));
+      const distance = haversine(slon, slat, elon, elat);
+      const startZone = nearestZone(slon, slat), endZone = nearestZone(elon, elat);
+      const selectedStrategy = document.getElementById('routeStrategy').value;
+      const midZone = nearestZone((slon + elon) / 2, (slat + elat) / 2);
+      const mode = document.getElementById('monitorMode').value;
+      const results = [];
+      if (mode === 'multi') {
+        const tasks = parseMultiTasks();
+        if (!tasks.length) {
+          agentText.textContent = '请在多任务输入框中按“起点 -> 终点”格式填写至少一个任务。';
+          return;
+        }
+        for (let taskIndex = 0; taskIndex < tasks.length; taskIndex++) {
+          const spec = tasks[taskIndex];
+          agentText.textContent = `正在定位并预测任务 ${taskIndex + 1}/${tasks.length}：${spec.startName} -> ${spec.endName}`;
+          const start = await locatePlace(spec.startName);
+          const end = await locatePlace(spec.endName);
+          if (!start || !end) {
+            agentText.textContent = `任务 ${taskIndex + 1} 定位失败：${spec.startName} -> ${spec.endName}。请换成更具体地点或先用经纬度。`;
+            return;
+          }
+          const taskDistance = haversine(start.lon, start.lat, end.lon, end.lat);
+          const taskStartZone = start.zone || nearestZone(start.lon, start.lat);
+          const taskEndZone = end.zone || nearestZone(end.lon, end.lat);
+          const taskMidZone = nearestZone((start.lon + end.lon) / 2, (start.lat + end.lat) / 2);
+          const taskContext = { slon:start.lon, slat:start.lat, elon:end.lon, elat:end.lat, speed, payloadRate, droneCount, windValue, gps, initialSoc, soh, healthBaseRisk, weatherRiskValue, distance:taskDistance, startZone:taskStartZone, endZone:taskEndZone, midZone:taskMidZone };
+          results.push(await buildPredictedRoute(selectedStrategy, taskContext, `任务${taskIndex + 1} ${start.name}→${end.name}`));
+        }
+      } else {
+        const context = { slon, slat, elon, elat, speed, payloadRate, droneCount, windValue, gps, initialSoc, soh, healthBaseRisk, weatherRiskValue, distance, startZone, endZone, midZone };
+        results.push(await buildPredictedRoute(selectedStrategy, context));
+      }
+      trajectories = {};
+      results.forEach(result => { trajectories[result.name] = result; });
+      const recommended = results.slice().sort((a, b) => Math.max(...a.route.map(p => p.ai)) - Math.max(...b.route.map(p => p.ai)) || a.duration - b.duration)[0];
+      activeTrajectoryName = recommended.name;
+      trajectory = recommended.route; idx = 0;
+      const modelText = results.some(item => item.modelUsed) ? '已调用本地XGBoost模型' : '未检测到本地XGBoost模型接口，已使用网页内置公式估算';
+      agentText.textContent = mode === 'multi' ? `${modelText}完成多任务同时监测，当前重点关注：${recommended.name}。` : `${modelText}完成全过程飞行风险预测。`;
+      renderTaskMonitor();
+      refresh2D(recommended.distance, recommended.duration, recommended.route[Math.floor(recommended.route.length / 2)]?.zone || midZone);
+      refresh3D();
+      update(0);
+    }
+    function refresh2D(distance, duration, midZone) {
+      riskMarkers.forEach(m => map.removeLayer(m)); riskMarkers = [];
+      compareRouteLayers.forEach(layer => map.removeLayer(layer));
+      Object.values(compareFlownLayers).forEach(layer => map.removeLayer(layer));
+      Object.values(taskDroneMarkers).forEach(marker => map.removeLayer(marker));
+      compareRouteLayers = []; compareFlownLayers = {}; taskDroneMarkers = {};
+      const points = trajectory.map(p => [p.lat, p.lon]);
+      routeLine.setLatLngs(points); flownLine.setLatLngs([]);
+      const names = Object.keys(trajectories);
+      if (names.length > 1) {
+        routeLine.setLatLngs([]);
+        flownLine.setLatLngs([]);
+        names.forEach((name, nameIndex) => {
+          const result = trajectories[name];
+          const color = routePalette[name] || taskColors[nameIndex % taskColors.length];
+          const latlngs = result.route.map(p => [p.lat, p.lon]);
+          const layer = L.polyline(latlngs, { color, weight: name === activeTrajectoryName ? 5 : 3, opacity: name === activeTrajectoryName ? .82 : .48 }).bindTooltip(`${name}｜最高风险 ${Math.max(...result.route.map(p => p.ai)).toFixed(3)}｜${Math.floor(result.duration / 60)}分${result.duration % 60}秒`).addTo(map);
+          layer.on('click', () => setActiveTrajectory(name, true));
+          compareRouteLayers.push(layer);
+          compareFlownLayers[name] = L.polyline([], { color, weight: 5, opacity: .95 }).addTo(map);
+          taskDroneMarkers[name] = L.marker(latlngs[0], { icon: droneIcon }).bindTooltip(name).addTo(map);
+        });
+        map.removeLayer(droneMarker);
+      } else if (!map.hasLayer(droneMarker)) {
+        droneMarker.addTo(map);
+      }
+      if (startMarker) map.removeLayer(startMarker); if (endMarker) map.removeLayer(endMarker);
+      startMarker = L.marker(points[0]).bindPopup('起点').addTo(map);
+      endMarker = L.marker(points[points.length - 1]).bindPopup('终点').addTo(map);
+      trajectory.filter(p => p.level !== '正常').filter((p, i) => i % 8 === 0).slice(0, 260).forEach(p => {
+        const color = levelColors[p.level] || '#607d8b';
+        riskMarkers.push(L.circleMarker([p.lat, p.lon], { radius:4, color, fillColor:color, fillOpacity:.55, weight:1 }).addTo(map));
+      });
+      const fitLayer = names.length > 1 ? L.featureGroup(compareRouteLayers) : routeLine;
+      map.fitBounds(fitLayer.getBounds(), { padding:[32,32] });
+      distanceEl.textContent = `${(distance / 1000).toFixed(2)} km`;
+      durationEl.textContent = `${Math.floor(duration / 60)}分${duration % 60}秒`;
+      zoneEl.textContent = midZone;
+      if (names.length > 1) {
+        chart.data.labels = trajectory.map(p => p.timestamp);
+        chart.data.datasets = names.map((name, nameIndex) => {
+          const result = trajectories[name];
+          const color = routePalette[name] || taskColors[nameIndex % taskColors.length];
+          return { label:name, data:trajectory.map((_, i) => {
+            const j = Math.min(result.route.length - 1, Math.round(i / Math.max(trajectory.length - 1, 1) * (result.route.length - 1)));
+            return result.route[j].ai;
+          }), borderColor:color, backgroundColor:'rgba(0,0,0,0)', fill:false, pointRadius:0, tension:.24 };
+        });
+      } else {
+        chart.data.labels = trajectory.map(p => p.timestamp);
+        chart.data.datasets = [{ label:'飞行风险', data:trajectory.map(p => p.ai), borderColor:'#ef6c00', backgroundColor:'rgba(239,108,0,.12)', fill:true, pointRadius:0, tension:.24 }];
+      }
+      chart.update();
+    }
+    function warningFor(p) {
+      if (p.ai >= .80) return { title:'红色预警', text:'当前航段飞行风险处于极高水平，应立即中止高风险航段，执行返航或就近备降预案。' };
+      if (p.ai >= .60) return { title:'橙色预警', text:'当前航段飞行风险较高，应启动主动避险，优先进入安全走廊并准备返航或备降。' };
+      if (p.ai >= .40) return { title:'黄色预警', text:'当前航段存在明显风险，应加强监测并提前调整高度层或航线策略。' };
+      if (p.ai >= .20) return { title:'蓝色预警', text:'当前航段存在轻度风险，可继续执行任务，但需要保持滚动监测。' };
+      return { title:'常态运行', text:'当前航段飞行风险较低，可以按照当前航线继续飞行。' };
+    }
+    function adviceFor(p) {
+      const items = [];
+      if (p.noFlyInside) items.push(`已进入或压线 ${p.noFlyZone}，应立即退出该空域并执行返航、备降或人工接管`);
+      else if (p.noFlyRisk >= .35) items.push(`接近 ${p.noFlyZone}，建议改选绕行避险航线并保持安全缓冲距离`);
+      if (p.ai >= .60) items.push('立即切换到安全走廊或绕行避险航线');
+      if (p.ai >= .40) items.push('缩短风险预测刷新间隔，重点关注前方高风险点');
+      if (p.weatherRisk >= .40) items.push('受实时天气影响，建议降低巡航速度并增加抗风裕度');
+      if (p.health >= .40) items.push('无人机健康风险偏高，建议检查电池、电机与通信链路状态');
+      if (p.altitude < 80 && p.ai >= .30) items.push('当前高度偏低，建议提升至更安全的高度层');
+      if (p.routeMode.includes('直飞') && p.ai >= .40) items.push('当前直飞策略风险偏高，建议改选安全走廊或绕行避险');
+      if (items.length === 0) items.push('保持当前航线，继续秒级监测飞行风险');
+      return items;
+    }
+    function update(i) {
+      if (!trajectory.length) return;
+      const p = trajectory[i], points = trajectory.slice(0, i + 1).map(item => [item.lat, item.lon]);
+      droneMarker.setLatLng([p.lat, p.lon]);
+      const inner = document.getElementById('drone-inner');
+      if (inner) inner.style.transform = `rotate(${p.heading}deg)`;
+      flownLine.setLatLngs(points);
+      const names = Object.keys(trajectories);
+      if (names.length > 1) {
+        names.forEach(name => {
+          const result = trajectories[name];
+          const j = Math.min(result.route.length - 1, Math.round(i / Math.max(trajectory.length - 1, 1) * (result.route.length - 1)));
+          if (compareFlownLayers[name]) compareFlownLayers[name].setLatLngs(result.route.slice(0, j + 1).map(item => [item.lat, item.lon]));
+          if (taskDroneMarkers[name]) taskDroneMarkers[name].setLatLng([result.route[j].lat, result.route[j].lon]);
+        });
+      }
+      update3D(i);
+      currentRisk.textContent = p.ai.toFixed(3);
+      maxRisk.textContent = Math.max(...trajectory.map(item => item.ai)).toFixed(3);
+      weatherRisk.textContent = p.weatherRisk.toFixed(3);
+      healthRisk.textContent = p.health.toFixed(3);
+      routeMode.textContent = p.routeMode;
+      altitudeNow.textContent = `${p.altitude.toFixed(0)} m`;
+      levelEl.textContent = p.level;
+      levelEl.style.color = levelColors[p.level] || '#263238';
+      const warning = warningFor(p);
+      warningText.innerHTML = `<b style="color:${levelColors[p.level] || '#263238'}">${warning.title}</b><br>${warning.text}`;
+      if (p.noFlyRisk >= .35) {
+        warningText.innerHTML += `<br><b style="color:#b71c1c">禁飞区提示</b><br>${p.noFlyInside ? '当前轨迹已进入禁飞区，应立即退出。' : '当前轨迹接近禁飞/严格管控区域，应提前绕飞。'}`;
+      }
+      const compareText = names.length > 1 ? '<br>' + names.map(name => {
+        const result = trajectories[name];
+        const maxValue = Math.max(...result.route.map(item => item.ai));
+        return `${name}最高风险 ${maxValue.toFixed(3)}`;
+      }).join('；') : '';
+      agentText.innerHTML = `第 <b>${p.timestamp}</b> 秒，AI预测风险 <b>${p.ai.toFixed(3)}</b>，当前预警等级 <b style="color:${levelColors[p.level] || '#263238'}">${p.level}</b>。${p.reason}${compareText}`;
+      advice.innerHTML = adviceFor(p).map(item => `• ${item}`).join('<br>');
+    }
+    function stopFlight() { if (timer) { clearInterval(timer); timer = null; } }
+    function startFlight() {
+      if (!trajectory.length) {
+        agentText.textContent = '请先生成航线后再播放。';
+        return;
+      }
+      stopFlight();
+      if (idx >= trajectory.length - 1) idx = 0;
+      update(idx);
+      timer = setInterval(() => {
+        idx += 1;
+        if (idx >= trajectory.length) {
+          idx = trajectory.length - 1;
+          update(idx);
+          stopFlight();
+          return;
+        }
+        update(idx);
+      }, Number(playSpeed.value));
+    }
+    function switchView(view) {
+      activeView = view;
+      document.getElementById('map2d').style.display = view === '2d' ? 'block' : 'none';
+      document.getElementById('map3d').style.display = view === '3d' ? 'block' : 'none';
+      document.getElementById('legend3d').style.display = view === '3d' ? 'block' : 'none';
+      document.getElementById('btn2d').classList.toggle('active', view === '2d');
+      document.getElementById('btn3d').classList.toggle('active', view === '3d');
+      if (view === '2d') setTimeout(() => map.invalidateSize(), 80);
+      if (view === '3d') { init3D(); setTimeout(resize3D, 80); }
+    }
+    const distanceEl = document.getElementById('distance'), durationEl = document.getElementById('duration'), zoneEl = document.getElementById('zone'), levelEl = document.getElementById('level');
+    initPlaceSelect('startPlace', '陆家嘴'); initPlaceSelect('endPlace', '同济大学四平路校区');
+    applyPlace('start', '陆家嘴'); applyPlace('end', '同济大学四平路校区');
+    startPlace.addEventListener('change', e => applyPlace('start', e.target.value));
+    endPlace.addEventListener('change', e => applyPlace('end', e.target.value));
+    searchStart.addEventListener('click', () => searchPlace('start'));
+    searchEnd.addEventListener('click', () => searchPlace('end'));
+    startSearch.addEventListener('keydown', e => { if (e.key === 'Enter') searchPlace('start'); });
+    endSearch.addEventListener('keydown', e => { if (e.key === 'Enter') searchPlace('end'); });
+    weatherBtn.addEventListener('click', async () => { await fetchWeather(); await generateTrajectory(); });
+    generate.addEventListener('click', async () => { await fetchWeather(); await generateTrajectory(); });
+    routeStrategy.addEventListener('change', async () => { await generateTrajectory(); });
+    monitorMode.addEventListener('change', async () => { await generateTrajectory(); });
+    activeTaskSelect.addEventListener('change', e => setActiveTrajectory(e.target.value, true));
+    document.getElementById('play').addEventListener('click', startFlight);
+    document.getElementById('pause').addEventListener('click', stopFlight);
+    document.getElementById('restart').addEventListener('click', () => { idx = 0; update(idx); startFlight(); });
+    playSpeed.addEventListener('change', () => { if (timer) startFlight(); });
+    document.getElementById('btn2d').addEventListener('click', () => switchView('2d'));
+    document.getElementById('btn3d').addEventListener('click', () => switchView('3d'));
+    document.getElementById('mapProvider').addEventListener('change', () => { apply2DBaseLayer(); refresh3D(); });
+    document.getElementById('noFlyMode').addEventListener('change', async () => { renderNoFlyZones(); await generateTrajectory(); });
+    fetchWeather().then(() => generateTrajectory()).catch(() => generateTrajectory());
+  </script>
+</body>
+</html>
